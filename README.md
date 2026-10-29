@@ -98,7 +98,7 @@ If you see `class not found` errors later, a framework is missing from the build
 Call this once, when the app starts, before you use any Firebase feature:
 
 ```python
-from pyros_firebase import firapp
+from pyios_firebase import firapp
 
 firapp.configure()
 ```
