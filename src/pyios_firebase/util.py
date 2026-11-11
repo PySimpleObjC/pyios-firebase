@@ -27,7 +27,7 @@ __all__ = (
     "to_python",
 )
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from ctypes import CDLL, c_ulong
 from datetime import UTC, date, datetime, timedelta
 from functools import cache
@@ -233,7 +233,7 @@ def _to_firestore_tree(value: Any, path: str) -> Any:
             f"{path or 'value'}: Firestore has no date-only type. Pass a datetime, "
             "for example datetime.combine(d, time(), tzinfo=UTC)"
         )
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):  # dict, MappingProxyType, ChainMap, ...
         result: dict[str, Any] = {}
         for key, item in value.items():
             if not isinstance(key, str):

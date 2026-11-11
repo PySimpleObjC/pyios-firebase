@@ -214,3 +214,16 @@ def test_filter_and_field_value_convert(monkeypatch):
     elements = fake.calls[1][1][0]
     assert timestamp_to_datetime(elements.objectAtIndex_(0)) == WHEN
     assert ObjCInstance(elements.objectAtIndex_(1)) == ObjCClass("NSNull").null()
+
+
+def test_any_mapping_can_be_written():
+    """FirestoreData is a Mapping: non-dict mappings must convert like dicts."""
+    from collections import ChainMap
+    from types import MappingProxyType
+
+    defaults = {"theme": "dark", "at": WHEN}
+    value = ChainMap({"theme": "light"}, {"nested": MappingProxyType(defaults)}, defaults)
+    assert round_trip(value) == {"theme": "light", "nested": defaults, "at": WHEN}
+    assert round_trip(MappingProxyType(defaults)) == defaults
+    with pytest.raises(TypeError, match="field names must be str"):
+        to_firestore(MappingProxyType({1: "x"}))

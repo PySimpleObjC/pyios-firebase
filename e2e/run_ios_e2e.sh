@@ -47,8 +47,15 @@ cleanup() {
   fi
   if [[ -n "$EMULATOR_PID" ]]; then
     say "stopping the emulator"
-    kill "$EMULATOR_PID" 2>/dev/null || true
-    pkill -f "cloud-firestore-emulator" 2>/dev/null || true
+    # only the process group this script started (firebase, node, java):
+    # other emulators on this Mac are left alone
+    kill -TERM -- "-$EMULATOR_PID" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      kill -0 -- "-$EMULATOR_PID" 2>/dev/null || break
+      sleep 0.5
+    done
+    kill -KILL -- "-$EMULATOR_PID" 2>/dev/null || true
+    wait "$EMULATOR_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
@@ -77,10 +84,14 @@ else
   command -v firebase >/dev/null || die "firebase-tools not found (npm i -g firebase-tools)"
   JAVA="$(pick_java)"
   say "starting the Firestore emulator (Java: $JAVA)"
+  # job control on: the emulator gets its own process group (PGID = its PID),
+  # so cleanup can stop exactly what was started here
+  set -m
   (cd "$HERE" && JAVA_HOME="$JAVA" PATH="$JAVA/bin:$PATH" \
      firebase emulators:start --only firestore --project "$PROJECT_ID" --config firebase.json \
      >"$LOGS/emulator.log" 2>&1) &
   EMULATOR_PID=$!
+  set +m
   for _ in $(seq 1 120); do
     grep -q "All emulators ready" "$LOGS/emulator.log" 2>/dev/null && break
     kill -0 "$EMULATOR_PID" 2>/dev/null || { cat "$LOGS/emulator.log"; die "the emulator did not start"; }
