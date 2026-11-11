@@ -48,6 +48,8 @@ pyios_firebase = ["py.typed"]
 
 [project.urls]
 Homepage = "https://github.com/PySimpleObjC/pyios-firebase"
+Documentation = "https://pysimpleobjc.github.io/pyios-firebase/"
+Source = "https://github.com/PySimpleObjC/pyios-firebase"
 Issues = "https://github.com/PySimpleObjC/pyios-firebase/issues"
 
 [dependency-groups]
