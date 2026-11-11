@@ -33,7 +33,21 @@ version = "3.15.2"
 [tool.kivy.ios.native.swift_packages.Firebase]
 url = "https://github.com/firebase/firebase-ios-sdk.git"
 requirement = { from = "13.1.1" }
-products = ["FirebaseFirestore"]
+products = ["FirebaseAuth", "FirebaseFirestore"]
+
+# Facebook Login, for pyios_firebase.auth.facebook (the e2e app checks the
+# SDK's classes and selectors; it cannot log in without a Facebook app)
+[tool.kivy.ios.native.swift_packages.facebook-ios-sdk]
+url = "https://github.com/facebook/facebook-ios-sdk.git"
+requirement = { from = "19.0.1" }
+products = ["FacebookLogin"]
 
 [tool.kivy.ios.xcode.build_settings]
 OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+# Firebase Auth needs a callback URL scheme for phone and web sign-in:
+# "app-" + GOOGLE_APP_ID with "-" for ":" (the app has no client ID). Without
+# it the SDK stops the app; pyios-firebase reports an AuthError instead.
+[[tool.kivy.ios.info_plist.CFBundleURLTypes]]
+CFBundleTypeRole = "Editor"
+CFBundleURLSchemes = ["app-1-1234567890-ios-0123456789abcdef"]

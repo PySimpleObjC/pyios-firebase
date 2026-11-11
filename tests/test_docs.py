@@ -14,8 +14,8 @@ import pytest
 
 PACKAGE = pathlib.Path(__file__).parent.parent / "src" / "pyios_firebase"
 SKIP_CLASSES = {"PyAppleSignInDelegate"}
-# the 0.1 App Check / Auth modules, documented when they move to subpackages
-LEGACY_MODULES = {"firappcheck.py", "firuser.py", "firgoogleauth.py"}
+# the 0.1 App Check module, documented when it moves to a subpackage
+LEGACY_MODULES = {"firappcheck.py"}
 ARG_LINE = re.compile(r"^    \*{0,2}(\w+)(?: \([^)]*\))?:", re.MULTILINE)
 
 

@@ -62,8 +62,8 @@ strict = true
 mypy_path = "src"
 # tests/typing checks the public API the way an app sees it
 files = ["src", "tests/typing"]
-# the 0.1 App Check / Auth modules, untyped until they move to subpackages
-exclude = ['src/pyios_firebase/(firappcheck|firuser|firgoogleauth)\.py$']
+# the 0.1 App Check module, untyped until it moves to a subpackage
+exclude = ['src/pyios_firebase/firappcheck\.py$']
 
 [[tool.mypy.overrides]]
 # Rubicon has no type information: its objects are Any to the checkers
@@ -72,13 +72,16 @@ ignore_missing_imports = true
 
 [tool.pyright]
 include = ["src"]
-exclude = [
-    "src/pyios_firebase/firappcheck.py",
-    "src/pyios_firebase/firuser.py",
-    "src/pyios_firebase/firgoogleauth.py",
-]
+exclude = ["src/pyios_firebase/firappcheck.py"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
 venvPath = "."
 venv = ".venv"
+
+[[tool.mypy.overrides]]
+# The Apple sign-in delegate must subclass Rubicon's (untyped) NSObject and use
+# its @objc_method decorator, which strict mode rejects by design
+module = ["pyios_firebase.auth.apple"]
+disallow_subclassing_any = false
+disallow_untyped_decorators = false

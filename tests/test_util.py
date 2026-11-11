@@ -70,3 +70,17 @@ def test_listener_block_lives_until_release(blocks):
     assert block in blocks
     release()
     assert block not in blocks
+
+
+def test_nsdate_to_datetime_with_a_real_nsdate():
+    from pyios_firebase.util import nsdate_to_datetime
+
+    nsdate = ObjCClass("NSDate").dateWithTimeIntervalSince1970_(1_700_000_000.25)
+    assert nsdate_to_datetime(nsdate) == datetime(
+        2023, 11, 14, 22, 13, 20, 250000, tzinfo=UTC
+    )
+    assert nsdate_to_datetime(None) is None
+    # NSDate values from the SDK also convert inside to_python
+    assert to_python({"at": nsdate}) == {
+        "at": datetime(2023, 11, 14, 22, 13, 20, 250000, tzinfo=UTC)
+    }

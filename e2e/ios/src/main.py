@@ -1,7 +1,7 @@
 """pyios-firebase end-to-end test app.
 
-Runs the Firestore suite against the local Firestore emulator through the
-real Firebase iOS SDK, shows the results on screen, prints them (prefix
+Runs the Firestore and Auth suites against the local Firebase emulators
+through the real Firebase iOS SDK, shows the results on screen, prints them (prefix
 ``PYIOS-E2E``), and writes them to ``Documents/pyios-e2e-results.json``.
 
 No GoogleService-Info.plist: Firebase is configured in code for the offline
@@ -20,10 +20,12 @@ from kivy.uix.scrollview import ScrollView
 
 PROJECT_ID = "demo-pyios-firebase"
 EMULATOR_HOST = os.environ.get("FIRESTORE_EMULATOR_HOST", "127.0.0.1:8080")
+AUTH_EMULATOR_HOST = os.environ.get("FIREBASE_AUTH_EMULATOR_HOST", "127.0.0.1:9099")
 RESULTS = os.path.join(os.path.expanduser("~/Documents"), "pyios-e2e-results.json")
 
 
 def configure_firebase() -> None:
+    from pyios_firebase.auth import Auth
     from pyios_firebase.firestore import Firestore
     from pyios_firebase.util import objc_class
 
@@ -36,6 +38,8 @@ def configure_firebase() -> None:
 
     host, port = EMULATOR_HOST.rsplit(":", 1)
     Firestore.firestore().use_emulator(host, int(port))
+    host, port = AUTH_EMULATOR_HOST.rsplit(":", 1)
+    Auth.auth().use_emulator(host, int(port))
 
 
 class E2EApp(App):
@@ -65,7 +69,11 @@ class E2EApp(App):
             pass
         try:
             configure_firebase()
-            from firestore_tests import RUN_ID, TESTS
+            from auth_tests import TESTS as AUTH_TESTS
+            from firestore_tests import RUN_ID
+            from firestore_tests import TESTS as FIRESTORE_TESTS
+
+            TESTS = FIRESTORE_TESTS + AUTH_TESTS
             from runner import Runner, dumps
         except Exception:  # noqa: BLE001
             self.finish({"passed": 0, "failed": 1, "results": [
@@ -77,12 +85,33 @@ class E2EApp(App):
         )
         self.lines = [f"pyios-firebase e2e — run {RUN_ID}", ""]
         self.running = ""
-        Runner(
+        runner = Runner(
             TESTS,
             self.progress,
             lambda report: self.finish(report, dumps),
             on_test_start=self.test_started,
-        ).start()
+        )
+        self.warm_up(runner.start)
+
+    def warm_up(self, then):
+        """One Firestore read before the tests: the emulator's first connection
+        can take several seconds, which must not count against the first test."""
+        from kivy.clock import Clock
+
+        from pyios_firebase.firestore import Firestore
+
+        state = {"started": False}
+
+        def start(*_args):
+            if not state["started"]:
+                state["started"] = True
+                print(f"PYIOS-E2E WARM {'timed out' if _args == ('timeout',) else 'ok'}", flush=True)
+                then()
+
+        Firestore.firestore().document_with_path("e2e_warmup/ping").get_document(
+            lambda snapshot, error: Clock.schedule_once(lambda dt: start(), 0)
+        )
+        Clock.schedule_once(lambda dt: start("timeout"), 60)
 
     def show(self):
         running = ["", f"▶ {self.running}"] if self.running else []
@@ -104,7 +133,10 @@ class E2EApp(App):
         with open(RESULTS + ".tmp", "w") as f:
             f.write(text)
         os.replace(RESULTS + ".tmp", RESULTS)  # the host polls for this file
-        summary = f"PYIOS-E2E DONE passed={report['passed']} failed={report['failed']}"
+        summary = (
+            f"PYIOS-E2E DONE passed={report['passed']} failed={report['failed']}"
+            f" skipped={report.get('skipped', 0)}"
+        )
         print(summary, flush=True)
         for result in report["results"]:
             if not result["ok"]:

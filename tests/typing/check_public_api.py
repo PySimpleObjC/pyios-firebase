@@ -124,3 +124,89 @@ def firestore_mistakes() -> None:
 
     # the result type of update_fn must match the callback
     db.run_transaction(update, on_done)  # type: ignore[misc]
+
+
+def auth_usage() -> None:
+    from pyios_firebase.auth import (
+        ActionCodeSettings,
+        Auth,
+        AuthDataResult,
+        AuthError,
+        AuthErrorCode,
+        AuthStateListener,
+        EmailAuthProvider,
+        IDTokenResult,
+        OAuthCredential,
+        OAuthProvider,
+        User,
+        current_user,
+        sign_out,
+    )
+    from pyios_firebase.auth.apple import AppleSignInResult, start_apple_sign_in
+    from pyios_firebase.auth.google import start_google_sign_in
+
+    auth = Auth.auth()
+    assert_type(auth.current_user, User | None)
+    assert_type(current_user(), User | None)
+    assert_type(sign_out(), AuthError | None)
+
+    def on_signed_in(result: AuthDataResult | None, error: AuthError | None) -> None:
+        if error is not None:
+            assert_type(error.code, int)
+            assert_type(error.cancelled, bool)
+            if error.code == AuthErrorCode.EMAIL_ALREADY_IN_USE:
+                pass
+            return
+        assert result is not None
+        user = result.user
+        assert_type(user, User)
+        assert_type(user.uid, str | None)
+        assert_type(user.is_anonymous, bool)
+
+        def on_token(token: IDTokenResult | None, error: AuthError | None) -> None:
+            assert token is not None
+            assert_type(token.claims, dict[str, Any])
+            assert_type(token.expiration_date, datetime)
+
+        user.get_id_token_result(on_token, force_refresh=True)
+        user.update_profile(display_name="Ada")
+        user.update_profile(None, photo_url=None)
+
+    auth.sign_in_with_email_password("a@b.c", "pw", on_signed_in)
+    auth.create_user_with_email_password("a@b.c", "pw", on_signed_in)
+    auth.sign_in_anonymously(on_signed_in)
+    auth.sign_in_with_credential(
+        EmailAuthProvider.credential("a@b.c", "pw"), on_signed_in
+    )
+    auth.send_sign_in_link(
+        "a@b.c", ActionCodeSettings(url="https://x", handle_code_in_app=True)
+    )
+    assert_type(
+        OAuthProvider.credential("microsoft.com", id_token="t"), OAuthCredential
+    )
+    listener = auth.add_state_did_change_listener(lambda user: None)
+    assert_type(listener, AuthStateListener)
+    listener.remove()
+
+    start_google_sign_in(on_signed_in)
+
+    def on_apple(result: AppleSignInResult | None, error: AuthError | None) -> None:
+        if result is not None:
+            assert_type(result.first_name, str)
+
+    start_apple_sign_in(on_apple)
+
+
+def auth_mistakes() -> None:
+    from pyios_firebase.auth import ActionCodeSettings, Auth, User
+
+    auth = Auth.auth()
+
+    def one_argument(result: object) -> None: ...
+
+    auth.sign_in_anonymously(one_argument)  # type: ignore[arg-type]
+    auth.sign_in_with_credential("not a credential", None)  # type: ignore[arg-type]
+    auth.send_sign_in_link("a@b.c", {"url": "https://x"})  # type: ignore[arg-type]
+    # profile fields are keyword-only
+    User().update_profile(None, "Ada")  # type: ignore[call-arg]
+    ActionCodeSettings(url=42)  # type: ignore[arg-type]

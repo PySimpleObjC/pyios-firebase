@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end tests: pyios-firebase in the iOS Simulator, through the real
-# Firebase iOS SDK, against the local Firestore emulator.
+# Firebase iOS SDK, against the local Firestore and Auth emulators.
 #
 #   e2e/run_ios_e2e.sh
 #
@@ -24,6 +24,7 @@ TIMEOUT="${E2E_TIMEOUT:-900}"
 PROJECT_ID="demo-pyios-firebase"
 BUNDLE_ID="io.github.pysimpleobjc.pyiosfirebase.e2e"
 EMULATOR="127.0.0.1:8080"
+AUTH_EMULATOR="127.0.0.1:9099"
 RESULTS_NAME="pyios-e2e-results.json"
 # the kivyforge commit the build is known to work with
 KIVYFORGE="git+https://github.com/ElliotGarbus/kivyforge.git@758dc40e6e7f3c430f06f5f25c98023882926e28"
@@ -78,17 +79,17 @@ pick_java() {
 }
 
 # ---- 2. the emulator ----------------------------------------------------------
-if curl -fs "http://$EMULATOR/" >/dev/null 2>&1; then
-  say "reusing the Firestore emulator already on $EMULATOR"
+if curl -fs "http://$EMULATOR/" >/dev/null 2>&1 && curl -fs "http://$AUTH_EMULATOR/" >/dev/null 2>&1; then
+  say "reusing the emulators already on $EMULATOR (Firestore) and $AUTH_EMULATOR (Auth)"
 else
   command -v firebase >/dev/null || die "firebase-tools not found (npm i -g firebase-tools)"
   JAVA="$(pick_java)"
-  say "starting the Firestore emulator (Java: $JAVA)"
+  say "starting the Firestore and Auth emulators (Java: $JAVA)"
   # job control on: the emulator gets its own process group (PGID = its PID),
   # so cleanup can stop exactly what was started here
   set -m
   (cd "$HERE" && JAVA_HOME="$JAVA" PATH="$JAVA/bin:$PATH" \
-     firebase emulators:start --only firestore --project "$PROJECT_ID" --config firebase.json \
+     firebase emulators:start --only firestore,auth --project "$PROJECT_ID" --config firebase.json \
      >"$LOGS/emulator.log" 2>&1) &
   EMULATOR_PID=$!
   set +m
@@ -99,8 +100,9 @@ else
   done
   grep -q "All emulators ready" "$LOGS/emulator.log" || die "the emulator was not ready after 120s"
 fi
-say "clearing the emulator's data"
+say "clearing the emulators' data"
 curl -fs -X DELETE "http://$EMULATOR/emulator/v1/projects/$PROJECT_ID/databases/(default)/documents" >/dev/null
+curl -fs -X DELETE "http://$AUTH_EMULATOR/emulator/v1/projects/$PROJECT_ID/accounts" >/dev/null
 
 # ---- 3. the library wheel and the app ------------------------------------------
 say "building the pyios-firebase wheel from $ROOT"
@@ -150,10 +152,13 @@ python3 - "$LOGS/$RESULTS_NAME" <<'PY'
 import json, sys
 report = json.load(open(sys.argv[1]))
 for r in report["results"]:
-    mark = "\033[32mPASS\033[0m" if r["ok"] else "\033[31mFAIL\033[0m"
+    if r.get("skipped"):
+        mark = "\033[33mSKIP\033[0m"
+    else:
+        mark = "\033[32mPASS\033[0m" if r["ok"] else "\033[31mFAIL\033[0m"
     print(f"  {mark} {r['name']} ({r['seconds']}s)")
-    if not r["ok"]:
+    if not r["ok"] or r.get("skipped"):
         print("       " + r["detail"].strip().replace("\n", "\n       "))
-print(f"\n{report['passed']} passed, {report['failed']} failed in {report['seconds']}s")
+print(f"\n{report['passed']} passed, {report['failed']} failed, {report.get('skipped', 0)} skipped in {report['seconds']}s")
 sys.exit(0 if report["failed"] == 0 and report["passed"] > 0 else 1)
 PY
