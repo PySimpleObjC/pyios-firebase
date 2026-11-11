@@ -52,6 +52,8 @@ Issues = "https://github.com/PySimpleObjC/pyios-firebase/issues"
 
 [dependency-groups]
 dev = ["pytest>=8", "mypy>=1.13", "pyright>=1.1.390"]
+# the documentation website (docs/, mkdocs.yml): uv run --group docs mkdocs serve
+docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.27", "ruff>=0.6"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

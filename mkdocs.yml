@@ -1,0 +1,208 @@
+# The documentation website: https://pysimpleobjc.github.io/pyios-firebase/
+#
+#   uv run --group docs mkdocs serve      # preview at http://127.0.0.1:8000
+#   uv run --group docs mkdocs build --strict
+#
+# The pages are the Markdown files in docs/. The API reference pages embed the
+# reference generated from the docstrings (mkdocstrings, the ::: lines).
+# .github/workflows/docs.yml publishes the site to GitHub Pages.
+
+site_name: pyios-firebase
+site_url: https://pysimpleobjc.github.io/pyios-firebase/
+site_description: Firebase for Python apps on iOS (Kivy, BeeWare...), in pure Python.
+site_author: Kenechukwu Akubue
+repo_url: https://github.com/PySimpleObjC/pyios-firebase
+repo_name: PySimpleObjC/pyios-firebase
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; Kenechukwu Akubue. MIT License. Firebase is a trademark of Google LLC; this project is not affiliated with Google.
+
+# with --strict, any broken link or #anchor fails the build
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  custom_dir: docs/overrides
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil-outline
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - navigation.path
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - content.tooltips
+  # light, dark, or follow the system: the switch in the header cycles them
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: "Theme: system (switch to light)"
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: "Theme: light (switch to dark)"
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: "Theme: dark (switch to system)"
+
+extra_css:
+  - assets/site.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/PySimpleObjC/pyios-firebase
+      name: pyios-firebase on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pyios-firebase/
+      name: pyios-firebase on PyPI
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            docstring_section_style: table
+            show_root_heading: false
+            show_root_toc_entry: false
+            show_source: false
+            show_bases: true
+            show_signature_annotations: true
+            separate_signature: true
+            signature_crossrefs: true
+            members_order: source
+            filters: ["!^_"]
+            show_if_no_docstring: false
+            heading_level: 3
+            merge_init_into_class: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            summary: true
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Setup: getting-started/setup.md
+      - Emulator Suite: getting-started/emulators.md
+      - Callbacks and threads: getting-started/callbacks.md
+      - Errors: getting-started/errors.md
+      - Type hints: getting-started/type-hints.md
+      - Good to know: getting-started/good-to-know.md
+  - Products:
+      - Cloud Firestore:
+          - Overview: firestore/index.md
+          - Python values: firestore/data-types.md
+          - Writing data: firestore/writing.md
+          - Reading and querying: firestore/reading.md
+          - Realtime updates: firestore/listeners.md
+          - Transactions and batches: firestore/transactions.md
+          - Aggregation: firestore/aggregation.md
+          - Reference: firestore/reference.md
+      - Authentication:
+          - Overview: auth/index.md
+          - Email and password: auth/email.md
+          - Social providers: auth/social.md
+          - Phone number: auth/phone.md
+          - Anonymous and custom: auth/anonymous.md
+          - Multi-factor: auth/multi-factor.md
+          - Users and accounts: auth/users.md
+          - Reference: auth/reference.md
+      - Realtime Database:
+          - Overview: database/index.md
+          - Reading and writing: database/read-write.md
+          - Lists and queries: database/lists.md
+          - Offline and presence: database/offline.md
+          - Reference: database/reference.md
+      - Cloud Functions:
+          - Usage: functions/index.md
+          - Reference: functions/reference.md
+      - Cloud Storage:
+          - Usage: storage/index.md
+          - Reference: storage/reference.md
+      - Remote Config:
+          - Usage: remote-config/index.md
+          - Reference: remote-config/reference.md
+      - App Check:
+          - Usage: app-check/index.md
+          - Reference: app-check/reference.md
+      - Analytics:
+          - Usage: analytics/index.md
+          - Reference: analytics/reference.md
+      - Crashlytics:
+          - Usage: crashlytics/index.md
+          - Reference: crashlytics/reference.md
+      - Cloud Messaging:
+          - Overview: messaging/index.md
+          - Notifications: messaging/notifications.md
+          - Reference: messaging/reference.md
+      - Performance Monitoring:
+          - Usage: performance/index.md
+          - Reference: performance/reference.md
+      - Core, types and helpers: reference/core.md
+  - Guides:
+      - Troubleshooting: guides/troubleshooting.md
+      - Migrating: guides/migrating.md
+      - Development and testing: guides/development.md
+      - Licenses: guides/licenses.md

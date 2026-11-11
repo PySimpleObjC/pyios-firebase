@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{#- The favicons: the SVG (set as theme.favicon) for browsers that draw it,
+    PNG and ICO for the others (Safari), and the home-screen icon for iOS. -#}
+{% block extrahead %}
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ 'assets/favicon-32.png' | url }}">
+  <link rel="alternate icon" type="image/x-icon" href="{{ 'assets/favicon.ico' | url }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ 'assets/apple-touch-icon.png' | url }}">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#12141a">
+{% endblock %}

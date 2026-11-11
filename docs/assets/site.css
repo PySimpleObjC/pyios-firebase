@@ -1,0 +1,220 @@
+/* pyios-firebase: brand colours for the light and dark schemes, and the
+   home page. Material's variables do the rest. */
+
+:root {
+  --pf-orange: #f2541b;
+  --pf-amber: #ffb547;
+  --pf-radius: 12px;
+}
+
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #ffffff;
+  --md-primary-fg-color--light: #ffffff;
+  --md-primary-fg-color--dark: #f6f7f9;
+  --md-primary-bg-color: #1f2430;
+  --md-primary-bg-color--light: #5b6172;
+  --md-accent-fg-color: #d9480f;
+  --md-typeset-a-color: #c2410c;
+  --md-default-bg-color: #ffffff;
+  --pf-surface: #f7f8fa;
+  --pf-border: #e6e8ec;
+  --pf-muted: #5b6172;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 225;
+  --md-default-bg-color: #12141a;
+  --md-default-bg-color--light: #12141add;
+  --md-primary-fg-color: #12141a;
+  --md-primary-fg-color--light: #12141a;
+  --md-primary-fg-color--dark: #0d0f14;
+  --md-primary-bg-color: #e7e9ee;
+  --md-primary-bg-color--light: #9aa1b1;
+  --md-accent-fg-color: #ff9a5c;
+  --md-typeset-a-color: #ff9a5c;
+  --md-code-bg-color: #1a1d25;
+  --pf-surface: #181b22;
+  --pf-border: #262a34;
+  --pf-muted: #9aa1b1;
+}
+
+/* ---- header: a light bar with a thin brand line, like a docs site -------- */
+
+.md-header {
+  border-bottom: 1px solid var(--pf-border);
+  box-shadow: none;
+}
+
+.md-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--pf-amber), var(--pf-orange));
+}
+
+.md-header__title {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.md-search__form {
+  border-radius: 8px;
+  background-color: var(--pf-surface);
+  border: 1px solid var(--pf-border);
+}
+
+[data-md-toggle="search"]:checked ~ .md-header .md-search__form {
+  border-radius: 8px 8px 0 0;
+}
+
+/* ---- sidebar ------------------------------------------------------------- */
+
+.md-nav__title {
+  font-weight: 700;
+}
+
+.md-nav--primary .md-nav__item--section > .md-nav__link {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.66rem;
+  color: var(--pf-muted);
+}
+
+.md-nav__link--active {
+  font-weight: 600;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary {
+    border-right: 1px solid var(--pf-border);
+  }
+}
+
+/* ---- content ------------------------------------------------------------- */
+
+.md-typeset h1 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--md-default-fg-color);
+}
+
+.md-typeset h2 {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border-top: 1px solid var(--pf-border);
+  padding-top: 1.2rem;
+}
+
+.md-typeset h1 + h2,
+.md-typeset .md-content__inner > h2:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.md-typeset table:not([class]) {
+  border-radius: var(--pf-radius);
+  border: 1px solid var(--pf-border);
+  overflow: hidden;
+  font-size: 0.72rem;
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--pf-surface);
+}
+
+.md-typeset pre > code,
+.md-typeset .highlight {
+  border-radius: var(--pf-radius);
+}
+
+.md-typeset code {
+  border-radius: 6px;
+}
+
+/* the API reference: quieter headings for each object */
+.doc-heading code {
+  font-size: 0.9em;
+}
+
+.doc-symbol {
+  border-radius: 4px;
+}
+
+/* ---- home page ----------------------------------------------------------- */
+
+.pf-hero {
+  text-align: center;
+  padding: 2.5rem 0 1.5rem;
+}
+
+.pf-hero img {
+  width: 76px;
+  height: 76px;
+}
+
+.md-typeset .pf-hero h1 {
+  font-size: 2.6rem;
+  margin: 0.8rem 0 0.4rem;
+}
+
+.pf-hero .pf-tagline {
+  font-size: 1.05rem;
+  color: var(--pf-muted);
+  max-width: 34rem;
+  margin: 0 auto 1.4rem;
+}
+
+.md-typeset .pf-hero .md-button {
+  border-radius: 999px;
+  margin: 0.25rem;
+}
+
+.md-typeset .pf-hero .md-button--primary {
+  background: linear-gradient(90deg, var(--pf-amber), var(--pf-orange));
+  border: 0;
+  color: #fff;
+}
+
+.pf-install {
+  max-width: 28rem;
+  margin: 1.2rem auto 0;
+}
+
+.md-typeset .grid.cards > ul > li {
+  border-radius: var(--pf-radius);
+  border: 1px solid var(--pf-border);
+  background: var(--pf-surface);
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover {
+  transform: translateY(-2px);
+  border-color: var(--md-accent-fg-color);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.08);
+}
+
+.md-typeset .grid.cards .twemoji.lg,
+.md-typeset .grid.cards .lg.middle {
+  color: var(--md-accent-fg-color);
+}
+
+/* buttons use the accent colour (the primary colour is the header's) */
+.md-typeset .md-button {
+  color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+}
+
+.md-typeset .md-button:hover,
+.md-typeset .md-button:focus {
+  background-color: var(--md-accent-fg-color);
+  border-color: var(--md-accent-fg-color);
+  color: #fff;
+}
+
+/* names in a table's first column stay on one line (the table scrolls if needed) */
+.md-typeset table:not([class]) td:first-child code {
+  white-space: nowrap;
+}
