@@ -34,8 +34,9 @@ def sign_up(email, password):
     auth.current_user.link_with_credential(credential, on_linked)
 ```
 
-Any provider works: `link_with_provider(OAuthProvider(...))`, or the
-credential from `get_google_credential` / `get_apple_credential`
+Any provider works: `link_with_provider(OAuthProvider(...))`, the credential
+from `get_google_credential`, or `apple.credential` from
+`get_apple_credential`
 ([Social providers](social.md#credentials-without-signing-in)).
 
 !!! note

@@ -184,9 +184,22 @@ The local player must be signed in to Game Center first (GameKit's
 ## Credentials without signing in
 
 `get_google_credential`, `get_apple_credential` and `get_facebook_credential`
-show the sheet and give the credential **without** signing in. Use them to
+show the sheet and give a credential **without** signing in. Use it to
 [link](users.md#link-providers) the provider to the current user, or to
 [re-authenticate](users.md#re-authenticate).
+
+| Function | Callback gets | The credential to link |
+|---|---|---|
+| `get_google_credential` | `(credential, error)` | `credential` |
+| `get_facebook_credential` | `(credential, error)` | `credential` |
+| `get_apple_credential` | `(apple, error)`: an `AppleCredential`, with the name, email and authorization code too | `apple.credential` |
+
+```python
+from pyios_firebase.auth.apple import get_apple_credential
+
+user = auth.current_user
+get_apple_credential(lambda apple, error: user.link_with_credential(apple.credential, on_linked))
+```
 
 ## One email, several providers
 

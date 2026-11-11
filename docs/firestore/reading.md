@@ -84,7 +84,8 @@ cities.query_where_field_not_in("country", ["USA", "Japan"])
 | `query_where_field_is_greater_than` / `..._or_equal_to` | is bigger |
 | `query_where_field_array_contains` | is an array holding the value |
 | `query_where_field_array_contains_any` | is an array holding any of the values (up to 30) |
-| `query_where_field_in` / `not_in` | is (not) one of the values (up to 30) |
+| `query_where_field_in` | is one of the values (up to 30) |
+| `query_where_field_not_in` | is none of the values (up to 10) |
 
 Several filters are joined with **AND**. Filter values are converted like any
 value: compare timestamps with a `datetime`, references with a

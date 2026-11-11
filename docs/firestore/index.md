@@ -109,7 +109,8 @@ sent ([Python values](data-types.md#values-firestore-cannot-store)).
 |---|---|
 | Document size | 1 MiB |
 | Writes in a batch or transaction | 500 |
-| `in`, `not-in`, `array-contains-any` values | 30 |
+| `in`, `array-contains-any` values | 30 |
+| `not-in` values | 10 |
 | Depth of sub-collections | 100 |
 | Sustained writes to one document | about 1 per second |
 
