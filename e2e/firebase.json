@@ -16,6 +16,10 @@
       "host": "127.0.0.1",
       "port": 9199
     },
+    "database": {
+      "host": "127.0.0.1",
+      "port": 9000
+    },
     "ui": {
       "enabled": true,
       "host": "127.0.0.1",
@@ -32,5 +36,8 @@
   ],
   "storage": {
     "rules": "storage.rules"
+  },
+  "database": {
+    "rules": "database.rules.json"
   }
 }

@@ -1,0 +1,17 @@
+{
+  "rules": {
+    "e2e": {
+      ".read": true,
+      ".write": true,
+      "$run": {
+        "scores": {
+          ".indexOn": ["score", "team"]
+        }
+      }
+    },
+    "e2e_private": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

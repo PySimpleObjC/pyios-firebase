@@ -18,6 +18,8 @@ SKIP_CLASSES = {
     "PyAppleSignInDelegate",
     "PyAppCheckProviderBridge",
     "PyAppCheckProviderFactory",
+    "PyMessagingDelegate",
+    "PyNotificationCenterDelegate",
 }
 LEGACY_MODULES: set[str] = set()
 ARG_LINE = re.compile(r"^    \*{0,2}(\w+)(?: \([^)]*\))?:", re.MULTILINE)

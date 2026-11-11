@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Final, cast
 
-from rubicon.objc import NSObject, ObjCProtocol, objc_method
+from rubicon.objc import NSObject, objc_method
 from rubicon.objc.runtime import objc_block, objc_id
 
 from ..types import FirebaseError, ObjCObject
@@ -55,6 +55,7 @@ from ..util import (
     nsdate_to_datetime,
     objc_class,
     objc_instance,
+    objc_protocols,
     one_shot_block,
 )
 
@@ -229,16 +230,6 @@ class AppCheckProvider(ABC):
         self.get_token(callback)
 
 
-def _protocols(*names: str) -> list[ObjCProtocol]:
-    found = []
-    for name in names:
-        try:
-            found.append(ObjCProtocol(name))
-        except NameError:
-            pass
-    return found
-
-
 def _answer(handler: Any) -> TokenCallback:
     """A Python callback that answers Firebase's completion block once."""
     state = {"done": False}
@@ -282,7 +273,7 @@ def _bridge_call(bridge: ObjCObject, method: str, handler: Any) -> None:
 
 
 class PyAppCheckProviderBridge(  # type: ignore[call-arg]  # Rubicon's class keyword
-    NSObject, protocols=_protocols("FIRAppCheckProvider")
+    NSObject, protocols=objc_protocols("FIRAppCheckProvider")
 ):
     """Lets Firebase call a Python ``AppCheckProvider``.
 
@@ -302,7 +293,7 @@ class PyAppCheckProviderBridge(  # type: ignore[call-arg]  # Rubicon's class key
 
 
 class PyAppCheckProviderFactory(  # type: ignore[call-arg]  # Rubicon's class keyword
-    NSObject, protocols=_protocols("FIRAppCheckProviderFactory")
+    NSObject, protocols=objc_protocols("FIRAppCheckProviderFactory")
 ):
     """Lets Firebase ask Python for a provider for each Firebase app."""
 

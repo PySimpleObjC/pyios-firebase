@@ -28,16 +28,20 @@ db.collection_with_path("cities").document_with_path("SF")
 7. [How callbacks work](#how-callbacks-work)
 8. [Cloud Firestore](#cloud-firestore)
 9. [Authentication](#authentication)
-10. [Cloud Functions](#cloud-functions)
-11. [Cloud Storage](#cloud-storage)
-12. [Remote Config](#remote-config)
-13. [App Check](#app-check)
-14. [API reference](#api-reference)
-15. [Good to know](#good-to-know)
-16. [Troubleshooting](#troubleshooting)
-17. [Migrating](#migrating)
-18. [Development](#development)
-19. [Licenses](#licenses)
+10. [Realtime Database](#realtime-database)
+11. [Cloud Functions](#cloud-functions)
+12. [Cloud Storage](#cloud-storage)
+13. [Remote Config](#remote-config)
+14. [App Check](#app-check)
+15. [Analytics](#analytics)
+16. [Crashlytics](#crashlytics)
+17. [Cloud Messaging](#cloud-messaging)
+18. [API reference](#api-reference)
+19. [Good to know](#good-to-know)
+20. [Troubleshooting](#troubleshooting)
+21. [Migrating](#migrating)
+22. [Development](#development)
+23. [Licenses](#licenses)
 
 ---
 
@@ -67,6 +71,11 @@ db.collection_with_path("cities").document_with_path("SF")
   - Linking and unlinking providers, re-authentication, anonymous upgrade
   - Typed errors (`AuthError`, `AuthErrorCode`)
   - The local Auth emulator, for development and tests
+- **Realtime Database**: read, write, update (multi-path), delete; live listeners
+  for values and child events; sorting, filtering and limits; transactions;
+  server values; priorities; offline persistence, `keep_synced`, presence and
+  `on_disconnect`; several databases; the emulator. Bad paths, values and queries
+  raise Python errors instead of aborting the app
 - **Cloud Functions**: callables by name, URL, region or custom domain; JSON data in
   and out; error codes and `details`; timeouts; limited-use App Check tokens; the
   emulator
@@ -79,6 +88,16 @@ db.collection_with_path("cities").document_with_path("SF")
 - **App Check**: DeviceCheck, App Attest, reCAPTCHA, the debug provider (with a CI
   token), custom providers written in Python; tokens, limited-use tokens, token
   listeners
+- **Analytics**: events with every SDK event and parameter name, screen views,
+  e-commerce items, user properties and ID, default parameters, consent mode,
+  session and instance IDs, on-device conversion measurement; names and values
+  checked before they are dropped
+- **Crashlytics**: logs, custom keys, user ID; Python exceptions as non-fatal
+  issues with their Python stack frames; uncaught Python exceptions (excepthook,
+  threads too); `NSError`s; opt-in reporting with unsent reports
+- **Cloud Messaging**: the FCM token and its listener, topics, APNs token,
+  installation ID registration; notification permission, foreground
+  presentation and taps in Python
 - Pure Python. No `.m` or `.h` files.
 - Callback blocks are kept alive for you, so they are not deleted too early.
 - Each product is its own subpackage. You only need the Firebase frameworks of
@@ -104,6 +123,10 @@ db.collection_with_path("cities").document_with_path("SF")
   | `storage` | `FirebaseStorage` |
   | `remote_config` | `FirebaseRemoteConfig` |
   | `app_check` | `FirebaseAppCheck` |
+  | `database` | `FirebaseDatabase` |
+  | `analytics` | `FirebaseAnalytics` |
+  | `crashlytics` | `FirebaseCrashlytics` (+ the dSYM upload run script) |
+  | `messaging` | `FirebaseMessaging` (+ the Push Notifications capability) |
 
 - A `GoogleService-Info.plist` file from your Firebase project, added to the app
 
@@ -139,10 +162,16 @@ pyios_firebase/
 │   ├── apple.py         start_apple_sign_in(), get_apple_credential()
 │   ├── facebook.py      start_facebook_sign_in(), get_facebook_credential()
 │   └── multi_factor.py  SMS and TOTP second factors
+├── database/            Database, DatabaseReference, DatabaseQuery, DataSnapshot,
+│                        MutableData, TransactionResult, ServerValue, errors
 ├── functions/           Functions, HTTPSCallable, FunctionsError
 ├── storage/             Storage, StorageReference, StorageMetadata, tasks, errors
 ├── remote_config/       RemoteConfig, RemoteConfigValue, ConfigUpdate
-└── app_check/           providers, AppCheck, AppCheckToken, AppCheckProvider
+├── app_check/           providers, AppCheck, AppCheckToken, AppCheckProvider
+├── analytics/           Analytics, Event, Param, UserProperty, consent
+├── crashlytics/         Crashlytics, ExceptionModel, StackFrame, CrashlyticsReport
+└── messaging/           Messaging, MessagingError, APNSTokenType
+    └── notifications.py permission, handlers, Notification
 ```
 
 Import from the subpackage:
@@ -307,6 +336,15 @@ Firebase calls your code later, when the server answers. So most methods take a
 | `get_data`, `download_url`, `write_to_file`, `list` | `(bytes / url / path / list_result, error)` |
 | `RemoteConfig.fetch_and_activate` / `fetch` / `activate` | `(status, error)` / `(status, error)` / `(changed, error)` |
 | `AppCheck.token` / `limited_use_token` | `(app_check_token, error)` |
+| Realtime Database writes (`set_value`, `update_child_values`, `remove_value`, `on_disconnect()...`) | `(error)` |
+| Realtime Database `observe` / `observe_once` | `(snapshot, previous_child_key)`; `cancel_callback(error)` |
+| Realtime Database `get_data` | `(snapshot, error)` |
+| Realtime Database `run_transaction` | `(error, committed, snapshot)` |
+| `Analytics.session_id` | `(session_id, error)` (background thread) |
+| `Crashlytics.check_for_unsent_reports` / `check_and_update_unsent_reports` | `(found)` / `(report)` (background thread) |
+| `Messaging.token` / `retrieve_fcm_token` | `(token, error)` |
+| Messaging topics, `register`, `delete_token`, `delete_data` | `(error)` |
+| `notifications.request_permission` / `authorization_status` | `(granted, error)` / `(status)` (background thread) |
 
 The rules are the same everywhere:
 
@@ -993,6 +1031,60 @@ APNs or reCAPTCHA. Its REST API shows the emails and SMS codes it "sent"
 
 ---
 
+## Realtime Database
+
+```python
+from pyios_firebase.database import DataEventType, Database, ServerValue, TransactionResult
+
+db = Database.database()                       # Database.database(url) for another database
+messages = db.reference("rooms/general/messages")
+
+messages.child_by_auto_id().set_value(
+    {"text": "Hello", "sent_at": ServerValue.timestamp()},
+    lambda error: print("saved" if error is None else error.description),
+)
+
+
+def on_message(snapshot, previous_key):
+    print(snapshot.key, snapshot.value)       # plain Python: dict, list, str, int, float, bool
+
+
+observer = messages.order_by_child("sent_at").limit_to_last(50).observe(
+    DataEventType.CHILD_ADDED, on_message
+)
+observer.remove()                              # stop listening
+
+
+def add_like(data):                            # may run several times: no side effects
+    data.value = (data.value or 0) + 1
+    return TransactionResult.success(data)
+
+
+db.reference("posts/p1/likes").run_transaction(add_like)
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Get started, use multiple databases | `Database.database()`, `Database.database(url)`, `reference(path)`, `reference_from_url` |
+| Read and write data | `set_value`, `update_child_values` (multi-path), `remove_value`, `get_data`, `observe(DataEventType.VALUE, ...)`, `observe_once` |
+| Save data as transactions | `run_transaction(update, callback, local_events=)` with `TransactionResult.success` / `abort`, `MutableData`; `ServerValue.increment` |
+| Work with lists of data | `child_by_auto_id()`; `CHILD_ADDED` / `CHANGED` / `REMOVED` / `MOVED` with the previous key |
+| Sort and filter data | `order_by_child` / `order_by_key` / `order_by_value` / `order_by_priority`, `limit_to_first` / `last`, `start_at` / `start_after` / `end_at` / `end_before` / `equal_to` |
+| Enable offline capabilities | `persistence_enabled`, `persistence_cache_size_bytes`, `keep_synced`, `go_offline` / `go_online`, `purge_outstanding_writes` |
+| Presence | `reference(".info/connected")`, `ref.on_disconnect().set_value / update_child_values / remove_value / cancel`, `ServerValue.timestamp()`, `".info/serverTimeOffset"` |
+| Priorities | `set_priority`, `set_value(..., priority=)`, `snapshot.priority`, `export_value()` |
+| Connect to the emulator | `Database.database().use_emulator("127.0.0.1", 9000)` |
+| Debug logging | `Database.set_logging_enabled(True)` |
+
+The SDK raises an Objective-C exception, which aborts the whole app, on a bad
+path or key (`. # $ [ ]`), an unstorable value (`nan`, a `datetime`, `bytes`) or
+a query misuse (ordering twice, a limit of 0, `order_by_key` with numbers...).
+pyios-firebase checks these first and raises `ValueError` or `TypeError` instead.
+The database has no date type: store `ServerValue.timestamp()` or milliseconds
+since 1970.
+
+---
+
 ## Cloud Functions
 
 ```python
@@ -1155,6 +1247,120 @@ app_check.use_custom_provider(MyProvider())
 
 Setting a provider after `core.configure()` raises `RuntimeError`: Firebase only
 reads it when the app is configured. The emulators do not check App Check tokens.
+
+---
+
+## Analytics
+
+```python
+from pyios_firebase.analytics import Analytics, ConsentStatus, ConsentType, Event, Param
+
+Analytics.log_event(Event.SELECT_CONTENT, {Param.CONTENT_TYPE: "image", Param.ITEM_ID: "P12453"})
+Analytics.log_event("level_up", {"level": 3, "character": "wizard"})    # your own events
+Analytics.log_screen_view("Checkout", "CheckoutScreen")                 # Kivy screens: call it yourself
+Analytics.set_user_property("premium", "plan")
+Analytics.set_user_id(uid)
+Analytics.set_consent({ConsentType.ANALYTICS_STORAGE: ConsentStatus.GRANTED})
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Get started, log events | `log_event(name, parameters)`; every SDK name as `Event.*` and `Param.*` |
+| Set user properties | `set_user_property(value, name)`, `UserProperty.*` |
+| Track screenviews | `log_screen_view(screen_name, screen_class)` |
+| Measure e-commerce | `Event.PURCHASE`, `Event.ADD_TO_CART`... with `Param.ITEMS` (a list of item dicts) |
+| Set a user ID | `set_user_id(id)` |
+| Default event parameters | `set_default_event_parameters({...})` |
+| Configure data collection, consent mode | `set_analytics_collection_enabled`, `set_consent({ConsentType: ConsentStatus})`, `reset_analytics_data` |
+| Sessions and IDs | `set_session_timeout_interval`, `session_id(callback)`, `app_instance_id()` |
+| On-device conversion measurement | `initiate_on_device_conversion_measurement(email_address= / phone_number= / hashed_...=)` |
+| Debug events | Run the app with `-FIRDebugEnabled`, then open DebugView in the console |
+
+The SDK drops a bad event quietly (an invalid or reserved name, a `bool` value,
+more than 25 parameters...). pyios-firebase raises `ValueError` or `TypeError`
+instead, so you find out while developing.
+
+---
+
+## Crashlytics
+
+```python
+from pyios_firebase.crashlytics import Crashlytics
+
+crashlytics = Crashlytics.crashlytics()
+crashlytics.install_excepthook()           # uncaught Python exceptions become issues
+crashlytics.set_user_id(uid)
+crashlytics.set_custom_keys({"screen": "checkout", "items": 3})
+crashlytics.log("tapped Pay")
+
+try:
+    pay()
+except PaymentError as e:
+    crashlytics.record_exception(e)        # a non-fatal issue, with the Python stack frames
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Get started | Add `FirebaseCrashlytics`, then the dSYM upload run script in Xcode |
+| Test your implementation | Crash on purpose (`os.abort()`) without the debugger attached, relaunch; `did_crash_during_previous_execution()` |
+| Add custom logs, keys and user IDs | `log`, `set_custom_value`, `set_custom_keys`, `set_user_id` |
+| Report non-fatal exceptions | `record_exception(python_exception)`, `record_error(nserror_or_firebase_error)`, `record_exception_model(ExceptionModel(...))` |
+| Python exceptions nobody catches | `install_excepthook()` (also for threads), `uninstall_excepthook()` |
+| Enable opt-in reporting | `FirebaseCrashlyticsCollectionEnabled` = `NO` in `Info.plist`, then `check_for_unsent_reports` / `check_and_update_unsent_reports`, `send_unsent_reports`, `delete_unsent_reports`; `collection_enabled` |
+
+A Python exception does not crash the app by itself, so the SDK never sees it:
+record it, or let `install_excepthook` do it. The unsent-report checks work once
+per launch (the SDK answers a second one with "no report"); a second call raises
+`RuntimeError`.
+
+---
+
+## Cloud Messaging
+
+```python
+from pyios_firebase.messaging import Messaging, notifications
+from pyios_firebase.messaging.notifications import AuthorizationOptions, PresentationOptions
+
+messaging = Messaging.messaging()
+messaging.add_token_listener(lambda token: send_to_my_server(token))
+
+
+def on_foreground(notification):           # arrived with the app open
+    print(notification.title, notification.body, notification.data)
+    return PresentationOptions.BANNER | PresentationOptions.SOUND
+
+
+def on_open(notification, action):          # the user tapped it
+    open_screen(notification.data.get("screen"))
+
+
+notifications.set_handlers(on_foreground=on_foreground, on_open=on_open)  # before App.run()
+notifications.request_permission(
+    AuthorizationOptions.ALERT | AuthorizationOptions.BADGE | AuthorizationOptions.SOUND,
+    lambda granted, error: print("allowed" if granted else "denied"),
+)
+notifications.register_for_remote_notifications()
+messaging.subscribe_to_topic("news")
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Set up a client app | `request_permission(options)`, `authorization_status`, `register_for_remote_notifications()`; the APNs token reaches FCM by itself |
+| Access the registration token | `add_token_listener`, `token(callback)`, `fcm_token`, `delete_token`, `auto_init_enabled` |
+| Send a test message | Copy the token from `add_token_listener` into the console's test message |
+| Receive messages | `set_handlers(on_foreground=, on_open=, default_presentation=)` → `Notification` (`title`, `body`, `data`, `message_id`...) |
+| Topic messaging | `subscribe_to_topic`, `unsubscribe_from_topic` |
+| Swizzling off | `apns_token` / `set_apns_token(token, APNSTokenType)`, `app_did_receive_message(user_info)` |
+| Installation ID registration | `FirebaseMessagingInstallationIdEnabled`; `register`, `unregister`, `add_registration_listener`, `add_unregistration_listener`, `installation_id_enabled` |
+| Several senders | `retrieve_fcm_token(sender_id)`, `delete_fcm_token(sender_id)` |
+| Delete the data | `delete_data` |
+| Send an image in the notification | Needs a Notification Service Extension, a separate native target (Swift), not Python |
+
+The app needs the Push Notifications capability and an APNs key uploaded in the
+Firebase console. FCM cannot reach the iOS Simulator; `xcrun simctl push` can
+deliver a test payload to it. Data-only (silent) messages go to the app
+delegate, which a Kivy app does not own in Python: send the data with a
+notification instead.
 
 ---
 
@@ -1423,6 +1629,31 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 - `AppCheck.app_check()`: `token(cb, force_refresh)`, `limited_use_token(cb)`, `add_token_listener(listener)` → `AppCheckTokenListener`, `is_token_auto_refresh_enabled`, `debug_token()`
 - `AppCheckErrorCode`, `DEBUG_TOKEN_ENVIRONMENT_VARIABLE`
 
+### Realtime Database
+
+- `Database.database(url=None)`: `reference(path)`, `reference_from_url(url)`, `use_emulator(host, port)`, `persistence_enabled`, `persistence_cache_size_bytes`, `go_offline()`, `go_online()`, `purge_outstanding_writes()`, `set_logging_enabled(enabled)`, `sdk_version()`
+- `DatabaseQuery`: `order_by_child(path)`, `order_by_key()`, `order_by_value()`, `order_by_priority()`, `start_at(value, child_key)`, `start_after`, `end_at`, `end_before`, `equal_to`, `limit_to_first(n)`, `limit_to_last(n)`; `observe(event_type, callback, cancel_callback)` → `DatabaseObserver` (`remove()`), `observe_once(...)`, `get_data(cb)`, `remove_all_observers()`, `keep_synced(bool)`, `ref`
+- `DatabaseReference(DatabaseQuery)`: `key`, `url`, `path`, `parent`, `root`, `database`, `child(path)`, `child_by_auto_id()`; `set_value(value, cb, *, priority)`, `update_child_values(values, cb)`, `remove_value(cb)`, `set_priority(priority, cb)`, `run_transaction(update, cb, *, local_events)`, `on_disconnect()` → `OnDisconnect` (`set_value`, `update_child_values`, `remove_value`, `cancel`)
+- `DataSnapshot`: `key`, `value`, `priority`, `export_value()`, `exists()`, `child(path)`, `has_child(path)`, `has_children()`, `children_count`, iteration over the children, `ref`
+- `MutableData`: `key`, `value` (settable), `priority` (settable), `child(path)`, `has_child`, `has_children`, `children_count`, `children`; `TransactionResult.success(data)`, `TransactionResult.abort()`
+- `ServerValue.timestamp()`, `ServerValue.increment(delta)`, `to_database(value)`; `DataEventType`; `DatabaseError` (`name`), `DatabaseErrorCode`, `DATABASE_ERROR_DOMAIN`, `TRANSACTION_ERROR_DOMAIN`
+
+### Analytics
+
+- `Analytics.log_event(name, parameters)`, `log_screen_view(screen_name, screen_class, parameters)`, `set_user_property(value, name)`, `set_user_id(id)`, `set_default_event_parameters(params)`, `set_analytics_collection_enabled(bool)`, `set_session_timeout_interval(seconds)`, `session_id(cb)`, `app_instance_id()`, `reset_analytics_data()`, `set_consent(consent)`, `initiate_on_device_conversion_measurement(...)`, `handle_open_url(url)`, `handle_user_activity(activity)`
+- `Event`, `Param`, `UserProperty` (every name from the SDK headers), `ConsentType`, `ConsentStatus`
+
+### Crashlytics
+
+- `Crashlytics.crashlytics()`: `log(message)`, `set_custom_value(key, value)`, `set_custom_keys(values)`, `set_user_id(id)`, `record_exception(exception)`, `record_exception_model(model)`, `record_error(error, user_info)`, `install_excepthook(*, threads)`, `uninstall_excepthook()`, `did_crash_during_previous_execution()`, `collection_enabled`, `check_for_unsent_reports(cb)`, `check_and_update_unsent_reports(cb)`, `send_unsent_reports()`, `delete_unsent_reports()`
+- `ExceptionModel(name, reason, stack_trace)`, `ExceptionModel.from_exception(exception)`, `StackFrame(symbol, file, line)`, `CrashlyticsReport` (`report_id`, `date_created`, `has_crash`, `log`, `set_custom_value`, `set_custom_keys`, `set_user_id`)
+
+### Messaging
+
+- `Messaging.messaging()`: `add_token_listener(listener)`, `add_registration_listener`, `add_unregistration_listener` (each returns a remove function); `token(cb)`, `fcm_token`, `delete_token(cb)`, `retrieve_fcm_token(sender_id, cb)`, `delete_fcm_token(sender_id, cb)`, `auto_init_enabled`, `installation_id_enabled`, `register(cb)`, `unregister(cb)`, `delete_data(cb)`, `subscribe_to_topic(topic, cb)`, `unsubscribe_from_topic(topic, cb)`, `apns_token`, `set_apns_token(token, type)`, `app_did_receive_message(user_info)`
+- `MessagingError` (`name`), `MessagingErrorCode`, `APNSTokenType`, `MessagingMessageStatus`, `MESSAGING_ERROR_DOMAIN`
+- `notifications`: `request_permission(options, cb)`, `authorization_status(cb)`, `register_for_remote_notifications()`, `set_handlers(on_foreground, on_open, *, default_presentation)`; `Notification` (`identifier`, `title`, `subtitle`, `body`, `badge`, `data`, `category`, `thread_id`, `date`, `message_id`); `AuthorizationOptions`, `AuthorizationStatus`, `PresentationOptions`, `DEFAULT_ACTION`, `DISMISS_ACTION`
+
 ---
 
 ## Good to know
@@ -1470,6 +1701,11 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 | A function call fails with `INTERNAL` | The function threw an unexpected error: check its logs (the message is not sent to the app) |
 | Storage `UNAUTHORIZED` / `UNAUTHENTICATED` | The Storage security rules do not allow it, or need a signed-in user |
 | With the Storage emulator, `get_metadata` still finds a deleted file | The emulator sends the file's own `Cache-Control` on metadata responses, so iOS caches them. Use a non-cacheable `cache_control` (for example `"no-cache"`) on emulator test files |
+| The app aborts with `InvalidPathValidation` or `InvalidFirebaseData` | A Realtime Database call made through `native` with a bad path or value. Through pyios-firebase it is a `ValueError` / `TypeError` |
+| Realtime Database writes never call back | The app is offline: writes wait in the queue, and the callback runs once the server has them. Local listeners already show the write |
+| An Analytics event does not show up | It may take up to a day in reports: use DebugView (`-FIRDebugEnabled`) to see events at once |
+| Crashlytics shows no crash | Crashlytics does not report while the debugger is attached: launch the app from the Home screen, crash, then launch it again to send |
+| No FCM token | On a device: the push capability and an APNs key in the console are needed. FCM does not work in the Simulator |
 | Remote Config values never change | `minimum_fetch_interval` (12 h by default) has not passed, or you fetched but did not `activate` |
 | A query fails with an index error | Open the link in the error message and create the index |
 | `snapshot.data` has odd types | Some Firestore values stay Objective-C objects (see [Python values and Firestore types](#python-values-and-firestore-types)). Open an issue and tell us the Rubicon version and what `type(...)` prints |
@@ -1547,8 +1783,10 @@ e2e/run_ios_e2e.sh
 
 This builds a small Kivy app (`e2e/ios/`) with the wheel from your checkout and
 the real Firebase iOS SDK, runs it in the iOS Simulator against the local
-Firestore, Auth, Functions and Storage emulators, and exits non-zero if any test
-fails.
+Firestore, Auth, Functions, Storage and Realtime Database emulators, and exits
+non-zero if any test fails. The app is launched twice: the first launch runs
+the suites and then crashes on purpose, and the second checks that Crashlytics
+recorded the crash.
 
 - Firestore: every value type, writes and field values, merges, queries and
   cursors, OR/AND filters, collection groups, aggregates, listeners and their
@@ -1574,6 +1812,19 @@ fails.
 - App Check: a Python custom provider serving the whole app, tokens and
   limited-use tokens, the token listener, settings, and the debug token from
   `FIRAAppCheckDebugToken`.
+- Realtime Database: value types, listeners for values and child events (with
+  previous keys), sorting and filtering, multi-path updates, server timestamps
+  and increments, transactions (committed, aborted, raising), priorities and the
+  export format, security rules errors, Python errors instead of aborts,
+  `.info/connected` and `on_disconnect`.
+- Analytics (no emulator exists): events, e-commerce items, screen views, user
+  properties, consent with the SDK's own constants, IDs, and name checks.
+- Crashlytics: logs, keys, non-fatal Python exceptions with their frames, the
+  excepthook, and a real crash found again on the next launch, with its unsent
+  report.
+- Messaging: settings, the APNs token, topic checks, delivery analytics, the
+  token call, provisional notification permission, and a notification pushed
+  to the Simulator (`xcrun simctl push`) arriving in the foreground handler.
 
 It needs Xcode with an iOS simulator, [uv](https://docs.astral.sh/uv/),
 `firebase-tools` and Java 21+ for the emulators. The first run creates a Python
