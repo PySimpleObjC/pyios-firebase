@@ -22,44 +22,60 @@ db.collection_with_path("cities").document_with_path("SF")
 1. [Features](#features)
 2. [Requirements](#requirements)
 3. [Installation](#installation)
-4. [Setup](#setup)
-5. [Quick start](#quick-start)
-6. [How callbacks work](#how-callbacks-work)
-7. [Usage guide](#usage-guide)
-8. [API reference](#api-reference)
-9. [Good to know](#good-to-know)
-10. [Troubleshooting](#troubleshooting)
-11. [Migrating from pyobjus-firebase](#migrating-from-pyobjus-firebase)
-12. [Licenses](#licenses)
+4. [Package layout](#package-layout)
+5. [Setup](#setup)
+6. [Type hints](#type-hints)
+7. [How callbacks work](#how-callbacks-work)
+8. [Cloud Firestore](#cloud-firestore)
+9. [API reference](#api-reference)
+10. [Good to know](#good-to-know)
+11. [Troubleshooting](#troubleshooting)
+12. [Migrating](#migrating)
+13. [Development](#development)
+14. [Licenses](#licenses)
 
 ---
 
 ## Features
 
+- **Core**: start Firebase
 - **Cloud Firestore**
   - Add, get, set, update, and delete documents
   - Queries: filters, ordering, limits, start and end points, paging
   - OR and AND filters
   - Collection group queries
-  - Live updates with snapshot listeners (full list or only the changes)
+  - Live updates with snapshot listeners, with the list of changes
   - Count, sum, and average queries
-  - Write batches
-  - Transactions
+  - Write batches and transactions
   - Field values: delete, server timestamp, array union, array remove, increment
+  - Plain Python values in and out, including `datetime`, `None` and nested data
+  - The local Firestore emulator, for development and tests
+- **App Check** debug provider and **Google Sign-In**: still the 0.1 modules
+  (`firappcheck`, `firgoogleauth`, `firuser`); they move to their own
+  subpackages in a later release
 - Pure Python. No `.m` or `.h` files.
-- Blocks (callbacks) are kept alive for you, so they are not deleted too early.
+- Callback blocks are kept alive for you, so they are not deleted too early.
+- Each product is its own subpackage. You only need the Firebase frameworks of
+  the products you import.
+- Fully typed (PEP 561), with docstrings on every public class and method, so
+  editors autocomplete and type checkers (mypy, pyright / Pylance) check your calls.
 
 ---
 
 ## Requirements
 
 - iOS app built with Python (BeeWare, Kivy, or similar)
+- Python 3.11 or newer
 - [`rubicon-objc`](https://github.com/beeware/rubicon-objc)
-- The Firebase iOS SDK frameworks added to your iOS build:
-  - `FirebaseCore`
-  - `FirebaseFirestore`
-  - `FirebaseAuth` (if you use sign-in)
-  - `FirebaseAppCheck` (if you use App Check)
+- The Firebase iOS SDK frameworks you use, added to your iOS build:
+
+  | Module | Framework |
+  |---|---|
+  | `core` | `FirebaseCore` (always) |
+  | `firestore` | `FirebaseFirestore` |
+  | `firappcheck` | `FirebaseAppCheck` |
+  | `firuser`, `firgoogleauth` | `FirebaseAuth` (+ `GoogleSignIn` for `firgoogleauth`) |
+
 - A `GoogleService-Info.plist` file from your Firebase project, added to the app
 
 ---
@@ -79,6 +95,33 @@ for Kivy).
 
 ---
 
+## Package layout
+
+```
+pyios_firebase/
+├── types.py             FirebaseError, callback types, QueryDict
+├── util.py              value and error conversion, block keep-alive
+├── core/                configure(), default_app()
+├── firestore/           Firestore, CollectionReference, DocumentReference,
+│                        DocumentSnapshot, Query, QuerySnapshot, WriteBatch,
+│                        Transaction, FieldValue, Filter, aggregates, enums
+├── firappcheck.py       initialize_debug_appcheck()          (0.1 module)
+├── firuser.py           User                                 (0.1 module)
+└── firgoogleauth.py     start_google_sign_in()               (0.1 module)
+```
+
+Import from the subpackage:
+
+```python
+from pyios_firebase import core
+from pyios_firebase.firestore import Firestore, FieldValue, Filter
+```
+
+In `core` and `firestore`, Objective-C classes are looked up the first time
+they are used, not on import.
+
+---
+
 ## Setup
 
 ### 1. Add `GoogleService-Info.plist`
@@ -93,26 +136,51 @@ Make sure the frameworks listed in [Requirements](#requirements) are linked.
 
 If you see `class not found` errors later, a framework is missing from the build.
 
+If you are building with [kivyforge](https://github.com/ElliotGarbus/kivyforge):
+
+```toml
+[[tool.kivy.ios.include_files]]
+dest = "."
+sources = ["GoogleService-Info.plist"]
+
+[tool.kivy.ios.native.swift_packages.Firebase]
+url = "https://github.com/firebase/firebase-ios-sdk.git"
+requirement = { from = "13.1.1" } # or latest version
+products = ["FirebaseAuth", "FirebaseAppCheck", "FirebaseFirestore"]
+
+[tool.kivy.ios.native.swift_packages.GoogleSignIn-iOS]
+url = "https://github.com/google/GoogleSignIn-iOS"
+requirement = { from = "10.1.0" } # or latest version
+products = ["GoogleSignIn"]
+
+[tool.kivy.ios.xcode.build_settings]
+OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+[[tool.kivy.ios.info_plist.CFBundleURLTypes]]
+CFBundleTypeRole = "Editor"
+CFBundleURLSchemes = ["com.googleusercontent.apps.YOUR_GOOGLE_REVERSE_CLIENT_ID_FROM_Info.plist"]
+```
+
 ### 3. Start Firebase
 
 Call this once, when the app starts, before you use any Firebase feature:
 
 ```python
-from pyios_firebase import firapp
+from pyios_firebase import core
 
-firapp.configure()
+core.configure()
 ```
 
 ### 4. (Optional) App Check debug provider
 
 For testing, you can use the App Check debug provider. It must be set **before**
-`firapp.configure()`:
+`core.configure()`:
 
 ```python
-from pyios_firebase import firapp, firappcheck
+from pyios_firebase import core, firappcheck
 
 firappcheck.initialize_debug_appcheck()
-firapp.configure()
+core.configure()
 ```
 
 Run the app, find the line `Firebase App Check Debug Token: ...` in the Xcode
@@ -131,7 +199,6 @@ URL to Google Sign-In like this:
 from kivy.core.window import Window
 from pyios_firebase import firgoogleauth
 
-
 Window.bind(on_drop_file=firgoogleauth.on_gid_signin_handle_url_kivy)
 ```
 
@@ -140,53 +207,45 @@ Your app must own the Google reversed client ID URL scheme
 On newer versions of Google Sign-In, this handler may never be called, because the
 result goes straight to your completion block. It is a safe backup.
 
-If you are building with `[kivyforge](https://github.com/ElliotGarbus/kivyforge)`
-```toml
-[[tool.kivy.ios.include_files]]
-dest = "."
-sources = ["GoogleService-Info.plist"]
-
-[tool.kivy.ios.native.swift_packages.Firebase]
-url = "https://github.com/firebase/firebase-ios-sdk.git"
-requirement = { from = "13.1.1" } # or latest version
-products = ["FirebaseAuth", "FirebaseAnalytics", "FirebaseAppCheck", "FirebaseFirestore"]
-
-[tool.kivy.ios.native.swift_packages.GoogleSignIn-iOS]
-url = "https://github.com/google/GoogleSignIn-iOS"
-requirement = { from = "10.1.0" } # or latest version
-products = ["GoogleSignIn"]
-
-[tool.kivy.ios.xcode.build_settings]
-OTHER_LDFLAGS = "$(inherited) -ObjC"
-
-[[tool.kivy.ios.info_plist.CFBundleURLTypes]]
-CFBundleTypeRole = "Editor"
-CFBundleURLSchemes = ["com.googleusercontent.apps.YOUR_GOOGLE_REVERSE_CLIENT_ID_FROM_Info.plist"]
-```
 ---
 
-## Quick start
+## Type hints
+
+Every public function and method is typed, and `pyios_firebase.types` has the
+shapes to annotate your own callbacks with:
 
 ```python
-from pyios_firebase.firfirestore import Firestore
-
-db = Firestore()
-
-
-def on_saved(error):
-    if error:
-        print("Error writing document:", error)
-    else:
-        print("Document successfully written!")
+from pyios_firebase.firestore import QuerySnapshot
+from pyios_firebase.types import FirebaseError
 
 
-db.collection_with_path("cities").document_with_path("LA").set_data(
-    {"name": "Los Angeles", "state": "CA", "country": "USA"},
-    on_saved,
-)
+def on_cities(snapshot: QuerySnapshot | None, error: FirebaseError | None) -> None:
+    if error is not None:
+        print(error.code, error.description)  # int, str
+        return
+    assert snapshot is not None
+    for doc in snapshot:                       # DocumentSnapshot
+        print(doc.document_id, doc.data)       # str, dict[str, Any]
 ```
 
-> The import path above is an example. Use the real module name of the package.
+| Type | What it is |
+|---|---|
+| `FirebaseError` | Every callback error: `code`, `description`, `domain`, `underlying_error` |
+| `ResultCallback[T]` | `Callable[[T \| None, FirebaseError \| None], None]` |
+| `ErrorCallback` | `Callable[[FirebaseError \| None], None]`, for writes |
+| `FirestoreData` | `Mapping[str, Any]`: data you write |
+| `ObjCObject` | An Objective-C object from Rubicon (typed `Any`) |
+
+Errors and results are still dicts (`QueryDict`), so `error["code"]` and
+`error.code` both work. The classes only tell the type checker which keys exist.
+
+Type checkers also catch mistakes such as a callback with the wrong number of
+arguments, a `DocumentReference` where a `DocumentSnapshot` is needed (query
+cursors), or a transaction function whose return type does not match its
+callback.
+
+Rubicon itself has no type information, so Objective-C objects the library does
+not wrap are typed `Any` (the `ObjCObject` alias).
 
 ---
 
@@ -197,42 +256,64 @@ Firebase calls your code later, when the server answers. So most methods take a
 
 | Kind of method | Callback arguments |
 |---|---|
-| Write methods (`set_data`, `update_data`, `delete_document`, `commit`) | `(error)` |
-| Methods that give back one result (`add_document_with_data`, `get_document`) | `(doc, error)` |
-| Methods that give back many results (`get_documents`, `add_snapshot_listener`) | `(docs, error)` |
-| `add_snapshot_listener_for_changes` | `(changes, error)` |
-| Aggregate queries | `(snapshot, error)` |
+| Firestore writes (`set_data`, `update_data`, `delete_document`, `commit`) | `(error)` |
+| `add_document_with_data` | `(document_reference, error)` |
+| `get_document`, document `add_snapshot_listener` | `(document_snapshot, error)` |
+| `get_documents`, query `add_snapshot_listener` | `(query_snapshot, error)` |
+| Aggregate queries | `(aggregate_snapshot, error)` |
 | `run_transaction` | `(result, error)` |
 
-The rules are always the same:
+The rules are the same everywhere:
 
-- `error` is `None` when it worked. Otherwise it is the error text (a string).
+- `error` is `None` when it worked. Otherwise it is a `QueryDict` with `code`
+  (`int`), `description` (`str`), `domain` (`str`) and `underlying_error`.
+  A `QueryDict` is a dict you can also read with dots: `error.description`.
 - When there is an error, the result is `None`.
 - For write methods, the callback is optional.
 
-Example:
-
 ```python
-def on_cities(docs, error):
+def on_cities(snapshot, error):
     if error:
-        print("Error getting documents:", error)
+        print("Error getting documents:", error.description)
         return
-    for doc in docs:
+    for doc in snapshot:
         print(doc.document_id, "=>", doc.data)
 ```
 
 ---
 
-## Usage guide
+## Cloud Firestore
+
+```python
+from pyios_firebase.firestore import Firestore
+
+db = Firestore.firestore()
+```
+
+### Use the local emulator
+
+For development and tests, point Firestore at the
+[Firestore emulator](https://firebase.google.com/docs/emulator-suite) right after
+`core.configure()`, before any other Firestore call:
+
+```python
+core.configure()
+Firestore.firestore().use_emulator("127.0.0.1", 8080)
+```
+
+`use_emulator` sets the host and turns TLS off (the emulator speaks plain
+HTTP/2; the SDK's own `useEmulator` only sets the host). The iOS Simulator
+shares the Mac's network, so `127.0.0.1` works there. On a device, use the
+Mac's LAN address and start the emulator with `"host": "0.0.0.0"`.
 
 ### Add a document with a generated ID
 
 ```python
-def on_added(doc, error):
+def on_added(ref, error):
     if error:
-        print("Error adding document:", error)
+        print("Error adding document:", error.description)
     else:
-        print("Document added with ID:", doc.document_id)
+        print("Document added with ID:", ref.document_id)
 
 
 db.collection_with_path("users").add_document_with_data(
@@ -241,13 +322,17 @@ db.collection_with_path("users").add_document_with_data(
 )
 ```
 
+`add_document_with_data` also gives back the `DocumentReference` right away.
+To get an ID before saving, use `collection.document_with_auto_id()`.
+
 ### Set, update, and delete a document
 
 ```python
 doc = db.collection_with_path("cities").document_with_path("DC")
 
-doc.set_data({"name": "Washington", "capital": False}, on_done)   # replaces everything
-doc.update_data({"capital": True}, on_done)                       # changes only these fields
+doc.set_data({"name": "Washington", "capital": False}, callback=on_done)  # replaces everything
+doc.set_data({"capital": True}, merge=True, callback=on_done)             # keeps the other fields
+doc.update_data({"capital": True}, on_done)                               # only these fields
 doc.delete_document(on_done)
 ```
 
@@ -260,18 +345,22 @@ db.document_with_path("cities/DC").update_data({"capital": True}, on_done)
 ### Read one document
 
 ```python
-def on_city(doc, error):
+def on_city(snapshot, error):
     if error:
-        print("Error getting document:", error)
+        print("Error getting document:", error.description)
         return
-    if doc.exists:
-        print("Document data:", doc.data)
+    if snapshot.exists:
+        print("Document data:", snapshot.data)
+        print("Name:", snapshot.get("name"), snapshot["address.city"])
     else:
         print("Document does not exist")
 
 
 db.collection_with_path("cities").document_with_path("SF").get_document(on_city)
 ```
+
+Read from the cache or the server only with
+`get_document(on_city, source=FIRFirestoreSource.Cache)`.
 
 ### Read many documents
 
@@ -284,6 +373,10 @@ db.collection_with_path("cities") \
     .query_where_field_is_equal_to("capital", True) \
     .get_documents(on_cities)
 ```
+
+A `QuerySnapshot` works like a list of `DocumentSnapshot`: `len(snapshot)`,
+`snapshot[0]`, `for doc in snapshot`. It also has `is_empty`, `documents`,
+`document_changes` and `metadata`.
 
 ### Filter, order, and limit
 
@@ -300,7 +393,7 @@ db.collection_with_path("cities") \
 ### OR and AND filters
 
 ```python
-from pyios_firebase.firfilter import Filter
+from pyios_firebase.firestore import Filter
 
 query = db.collection_with_path("cities").query_where_filter(
     Filter.or_filter_with_filters([
@@ -333,8 +426,8 @@ query = db.collection_with_path("cities") \
     .query_limited_to(25)
 ```
 
-`last_doc` must come from a callback (for example, the last item of `docs`),
-because it needs the data that was loaded.
+`last_doc` must be a `DocumentSnapshot` from a callback (for example
+`snapshot[-1]`), because it needs the data that was loaded.
 
 ### Collection group queries
 
@@ -351,11 +444,11 @@ Pass only the collection name, not a path.
 ### Live updates (snapshot listeners)
 
 ```python
-# One document
+# One document: callback gets (DocumentSnapshot, error)
 listener = db.collection_with_path("cities").document_with_path("SF") \
     .add_snapshot_listener(on_city_changed)
 
-# A query or a whole collection
+# A query or a whole collection: callback gets (QuerySnapshot, error)
 listener = db.collection_with_path("cities") \
     .query_where_field_is_equal_to("state", "CA") \
     .add_snapshot_listener(on_cities_changed)
@@ -365,36 +458,33 @@ listener.remove()
 ```
 
 The callback runs once at the start, and then again every time the data changes.
-Each call gives the **full** current list.
-
-To get **only what changed**, use `add_snapshot_listener_for_changes`:
+To see **only what changed**, use `snapshot.document_changes`:
 
 ```python
-from pyios_firebase.firfirestore import DocumentChange
+from pyios_firebase.firestore import DocumentChange
 
 
-def on_changes(changes, error):
+def on_cities_changed(snapshot, error):
     if error:
-        print("Error fetching documents:", error)
+        print("Error fetching documents:", error.description)
         return
-    for diff in changes:
+    for diff in snapshot.document_changes:
         if diff.type == DocumentChange.ADDED:
             print("New city:", diff.document.data)
         if diff.type == DocumentChange.MODIFIED:
             print("Modified city:", diff.document.data)
         if diff.type == DocumentChange.REMOVED:
             print("Removed city:", diff.document.data)
-
-
-listener = db.collection_with_path("cities") \
-    .query_where_field_is_equal_to("state", "CA") \
-    .add_snapshot_listener_for_changes(on_changes)
 ```
+
+Pass `include_metadata_changes=True`, or
+`options=SnapshotListenOptions(include_metadata_changes=True, source=FIRListenSource.Cache)`,
+for more control.
 
 ### Field values
 
 ```python
-from pyios_firebase.firfieldvalue import FieldValue
+from pyios_firebase.firestore import FieldValue
 
 region_ref = db.collection_with_path("cities").document_with_path("DC")
 
@@ -426,18 +516,20 @@ A batch can hold up to 500 writes. Use a batch only once.
 A transaction reads first and then writes, safely.
 
 ```python
+from pyios_firebase.firestore import TransactionException
+
 sf_reference = db.collection_with_path("cities").document_with_path("SF")
 
 
 def update_population(transaction):
     sf_document = transaction.get_document(sf_reference)
-    population = sf_document.data.get("population")
+    population = sf_document.get("population")
     if not isinstance(population, (int, float)):
-        raise ValueError("Unable to retreive population from snapshot")
+        raise TransactionException("Unable to read population from snapshot")
 
     population = int(population) + 1
     if population >= 1000000:
-        raise ValueError("Population too big")
+        raise TransactionException("Population too big")
 
     transaction.update_data({"population": population}, sf_reference)
     return population   # passed out to the callback
@@ -445,7 +537,7 @@ def update_population(transaction):
 
 def on_transaction_done(result, error):
     if error:
-        print("Transaction failed:", error)
+        print("Transaction failed:", error.description)
     else:
         print("Population increased to", result)
 
@@ -455,20 +547,24 @@ db.run_transaction(update_population, on_transaction_done)
 
 Important rules:
 
-- Raise a Python error to fail the transaction.
+- Raise an exception to stop the transaction. Its message becomes
+  `error.description`.
 - The function can run **more than once**, so only read and write data inside it.
   Do not print, change the screen, or change your app's state there.
-- Pass what you need **out** of the transaction by returning it.
+- Do all reads (`get_document`) before any write (`set_data`, `update_data`,
+  `delete_document`).
+- Pass what you need **out** of the transaction by returning it. Any Python value
+  works.
 
 ### Count, sum, and average
 
 ```python
-from pyios_firebase.firfirestore import AggregateField, FIRAggregateSource
+from pyios_firebase.firestore import AggregateField, FIRAggregateSource
 
 # Count only
 def on_count(snapshot, error):
     if error:
-        print("Error fetching count:", error)
+        print("Error fetching count:", error.description)
     else:
         print("Cities count:", snapshot.count)
 
@@ -485,7 +581,7 @@ avg_field = AggregateField.aggregate_field_for_average_of_field("population")
 
 def on_stats(snapshot, error):
     if error:
-        print("Error fetching aggregate:", error)
+        print("Error fetching aggregate:", error.description)
         return
     print("Count:", snapshot.value_for_aggregate_field(count_field))
     print("Sum:", snapshot.value_for_aggregate_field(sum_field))
@@ -499,30 +595,87 @@ db.collection_with_path("cities") \
 
 These are calculated on the server. They do not download the documents.
 
+### Python values and Firestore types
+
+You write and read plain Python values. They are converted for you everywhere a
+value goes in or comes out: `set_data`, `update_data`, `add_document_with_data`,
+batches, transactions, query filters and cursors, `Filter`, array `FieldValue`s,
+`snapshot.data` and `snapshot.get(...)`. Nested dicts and lists are converted too.
+
+| Python | Firestore | Read back as |
+|---|---|---|
+| `str` | string | `str` |
+| `int` | integer (64-bit) | `int` |
+| `float` | double | `float` |
+| `bool` | boolean | `bool` |
+| `None` | null | `None` |
+| `datetime` | timestamp | `datetime`, timezone-aware, in UTC |
+| `bytes` | bytes | `bytes` |
+| `dict` (`str` keys) | map | `dict` |
+| `list`, `tuple` | array | `list` |
+| `DocumentReference` | reference | `DocumentReference` |
+| `FieldValue.*` | special write operations | (not stored as a value) |
+
+```python
+from datetime import UTC, datetime
+
+doc.set_data({
+    "title": "Launch",
+    "starts_at": datetime(2026, 12, 1, 9, 30, tzinfo=UTC),
+    "cancelled_at": None,
+    "owner": db.document_with_path("users/ada"),
+})
+
+db.collection_with_path("events") \
+    .query_where_field_is_greater_than("starts_at", datetime.now(UTC)) \
+    .get_documents(on_events)
+```
+
+About dates and times:
+
+- Timestamps keep **microseconds**, both ways. Firestore stores nanoseconds, but
+  a Python `datetime` cannot hold them, so the extra digits are dropped on read.
+- A **naive** `datetime` (no `tzinfo`) is read as **UTC**, like the Firebase Admin
+  SDK for Python does. Use aware datetimes (`datetime.now(UTC)`) to be explicit.
+- Values you read are always in UTC. Use `.astimezone()` to show local time.
+- A plain `date` is refused, because Firestore has no date-only type. Pass a
+  `datetime`, for example `datetime.combine(d, time(), tzinfo=UTC)`, or store the
+  date as an ISO string.
+
+Values Firestore cannot store (for example a `set`, a `date`, or a field name
+that is not a `str`) raise a `TypeError` in Python, with the path of the bad field
+(`"events[0].at: ..."`), before anything is sent. Other special Firestore types
+(for example `FIRGeoPoint`) pass through as Objective-C objects in both
+directions.
+
 ---
 
 ## API reference
 
-### `Firestore`
+### Firestore
+
+#### `Firestore`
 
 | Method | Gives back | Notes |
 |---|---|---|
+| `Firestore.firestore()` | `Firestore` | The shared client |
 | `collection_with_path(path)` | `CollectionReference` | |
 | `document_with_path(path)` | `DocumentReference` | Full path, like `"cities/LA"` |
 | `collection_group_with_id(id)` | `Query` | Pass only the collection name |
+| `use_emulator(host="127.0.0.1", port=8080)` | nothing | Before any other call; development only |
 | `batch()` | `WriteBatch` | |
 | `run_transaction(update_fn, callback=None)` | nothing | Callback gets `(result, error)` |
 
-### `CollectionReference` (also a `Query`)
+#### `CollectionReference` (also a `Query`)
 
-| Method | Callback | Notes |
-|---|---|---|
-| `add_document_with_data(data, callback=None)` | `(doc, error)` | Creates a document with a generated ID |
-| `document_with_path(path)` | | Short path, like `"LA"` |
+| Member | Notes |
+|---|---|
+| `collection_id`, `path`, `parent` | `parent` is a `DocumentReference` or `None` |
+| `document_with_path(path)` | Short path, like `"LA"` |
+| `document_with_auto_id()` | New reference with a generated ID. Nothing is saved |
+| `add_document_with_data(data, callback=None)` | Callback gets `(document_reference, error)` |
 
-It also has every method of `Query`.
-
-### `Query`
+#### `Query`
 
 **Filters** (each gives a new `Query`):
 
@@ -533,6 +686,7 @@ It also has every method of `Query`.
 - `query_where_field_is_greater_than(field, value)`
 - `query_where_field_is_greater_than_or_equal_to(field, value)`
 - `query_where_field_array_contains(field, value)`
+- `query_where_field_array_contains_any(field, values)`
 - `query_where_field_in(field, values)`
 - `query_where_field_not_in(field, values)`
 - `query_where_filter(filter)`
@@ -540,48 +694,64 @@ It also has every method of `Query`.
 **Order and limit** (each gives a new `Query`):
 
 - `query_ordered_by_field(field, descending=False)`
-- `query_limited_to(limit)`
+- `query_limited_to(limit)`, `query_limited_to_last(limit)`
 - `query_starting_at_values(values)`, `query_starting_after_values(values)`
 - `query_ending_at_values(values)`, `query_ending_before_values(values)`
-- `query_starting_at_document(doc)`, `query_starting_after_document(doc)`
-- `query_ending_at_document(doc)`, `query_ending_before_document(doc)`
+- `query_starting_at_document(snapshot)`, `query_starting_after_document(snapshot)`
+- `query_ending_at_document(snapshot)`, `query_ending_before_document(snapshot)`
 
 **Run the query:**
 
 | Method | Callback |
 |---|---|
-| `get_documents(callback)` | `(docs, error)` |
-| `add_snapshot_listener(callback)` | `(docs, error)`, returns `ListenerRegistration` |
-| `add_snapshot_listener_for_changes(callback)` | `(changes, error)`, returns `ListenerRegistration` |
+| `get_documents(callback, source=None)` | `(QuerySnapshot, error)` |
+| `add_snapshot_listener(callback, include_metadata_changes=False, options=None)` | `(QuerySnapshot, error)`, returns `ListenerRegistration` |
 
-**Aggregates:**
+**Aggregates:** `count` (property) and `aggregate(fields)` give an `AggregateQuery`.
 
-- `count` (property) gives an `AggregateQuery`
-- `aggregate(fields)` gives an `AggregateQuery`
+#### `QuerySnapshot`
 
-### `DocumentReference`
+- `documents`: list of `DocumentSnapshot` (also `len()`, `[i]`, `for ... in`)
+- `document_changes`: list of `DocumentChange`
+- `document_changes_with_include_metadata_changes(bool)`
+- `is_empty`, `count`, `metadata`, `query`
+
+#### `DocumentReference`
 
 | Member | Notes |
 |---|---|
-| `document_id` | The ID of the document |
-| `exists` | `True` or `False`. `None` if no data was loaded |
-| `data` | A dict. `None` if no data was loaded, or the document has no fields |
-| `get_document(callback)` | Callback gets `(doc, error)` |
-| `set_data(data, callback=None)` | Replaces the whole document. Callback gets `(error)` |
-| `update_data(data, callback=None)` | Changes only the given fields. The document must exist. Callback gets `(error)` |
+| `document_id`, `path`, `parent`, `firestore` | `parent` is a `CollectionReference` |
+| `collection_with_path(path)` | A sub collection |
+| `get_document(callback, source=None)` | Callback gets `(DocumentSnapshot, error)` |
+| `set_data(data, merge=False, callback=None)` | Callback gets `(error)` |
+| `set_data_merge_fields(data, fields, callback=None)` | Callback gets `(error)` |
+| `update_data(data, callback=None)` | The document must exist. Callback gets `(error)` |
 | `delete_document(callback=None)` | Callback gets `(error)` |
-| `add_snapshot_listener(callback)` | Callback gets `(doc, error)`. Returns `ListenerRegistration` |
+| `add_snapshot_listener(callback, include_metadata_changes=False, options=None)` | Callback gets `(DocumentSnapshot, error)`. Returns `ListenerRegistration` |
 
-### `ListenerRegistration`
+#### `DocumentSnapshot`
 
-- `remove()`: stops the updates. It is safe to call twice.
+- `document_id`, `exists`, `reference`, `metadata`
+- `data`: a dict of Python values (`{}` if the document does not exist)
+- `data_with_server_timestamp_behavior(behavior)`
+- `get(field)` / `snapshot[field]`: one field, dotted names allowed
 
-### `DocumentChange`
+#### `DocumentChange`
 
 - `type`: one of `DocumentChange.ADDED`, `DocumentChange.MODIFIED`, `DocumentChange.REMOVED`
-- `document`: a `DocumentReference` with the data
+- `document`: a `DocumentSnapshot`
+- `old_index`, `new_index`
 
-### `WriteBatch`
+#### `ListenerRegistration` and `SnapshotListenOptions`
+
+- `remove()`: stops the updates. It is safe to call twice.
+- `SnapshotListenOptions(include_metadata_changes=False, source=None)`
+
+#### `SnapshotMetadata`
+
+- `is_from_cache`, `has_pending_writes`
+
+#### `WriteBatch`
 
 - `set_data(data, document, merge=False)`
 - `set_data_merge_fields(data, document, fields)`
@@ -591,14 +761,16 @@ It also has every method of `Query`.
 
 All except `commit` give back the batch, so you can chain them.
 
-### `Transaction`
+#### `Transaction`
 
 Given to your function inside `run_transaction`.
 
-- `get_document(document)` gives a `DocumentReference` with the data
+- `get_document(document)` gives a `DocumentSnapshot`
+- `set_data(data, document, merge=False)`
 - `update_data(data, document)`
+- `delete_document(document)`
 
-### `FieldValue`
+#### `FieldValue`
 
 - `field_value_for_delete()`
 - `field_value_for_server_timestamp()`
@@ -607,7 +779,7 @@ Given to your function inside `run_transaction`.
 - `field_value_for_integer_increment(value)`
 - `field_value_for_double_increment(value)`
 
-### `Filter`
+#### `Filter`
 
 - `filter_where_field_is_equal_to(field, value)`
 - `filter_where_field_is_not_equal_to(field, value)`
@@ -622,30 +794,29 @@ Given to your function inside `run_transaction`.
 - `or_filter_with_filters(filters)`
 - `and_filter_with_filters(filters)`
 
-### `AggregateField`
+#### `AggregateField`, `AggregateQuery`, `AggregateQuerySnapshot`
 
-- `aggregate_field_for_count()`
-- `aggregate_field_for_sum_of_field(field)`
-- `aggregate_field_for_average_of_field(field)`
-
-### `AggregateQuery` and `AggregateQuerySnapshot`
-
+- `AggregateField.aggregate_field_for_count()`
+- `AggregateField.aggregate_field_for_sum_of_field(field)`
+- `AggregateField.aggregate_field_for_average_of_field(field)`
 - `AggregateQuery.aggregation_with_source(source, callback)`: callback gets `(snapshot, error)`
 - `snapshot.count`: the count, as an `int`
 - `snapshot.value_for_aggregate_field(field)`: an `int`, a `float`, or `None`
 
-### Enum values
+#### Enum values
 
 Some Firebase names are fixed numbers in the compiled SDK, and Python cannot look
-them up by name. This project keeps them in one place:
+them up by name. They are kept in `pyios_firebase/firestore/enums.py`:
 
-```python
-class FIRAggregateSource:
-    Server = 0
-```
+| Class | Values |
+|---|---|
+| `FIRFirestoreSource` | `Default`, `Server`, `Cache` |
+| `FIRServerTimestampBehavior` | `None_`, `Estimate`, `Previous` |
+| `FIRAggregateSource` | `Server` |
+| `FIRListenSource` | `Default`, `Cache` |
+| `FIRDocumentChangeType` | `Added`, `Modified`, `Removed` |
 
-If you update the Firebase SDK, check these values in the SDK header files
-(`FIRDocumentChange.h` and `FIRAggregateSource.h`).
+If you update the Firebase SDK, check these values in the SDK header files.
 
 ---
 
@@ -654,17 +825,18 @@ If you update the Firebase SDK, check these values in the SDK header files
 - **Keep your listener.** Save the object that `add_snapshot_listener` gives back,
   and call `remove()` when you leave the screen. A listener keeps using the network
   and counts reads in your Firebase bill until you remove it.
-- **Main thread.** Callbacks may not run on the main thread. If you change widgets
-  (for example, in Kivy), use `Clock.schedule_once`:
+- **Main thread.** If a callback changes widgets (for example, in Kivy) and you are
+  not sure it runs on the main thread, use `Clock.schedule_once`:
 
   ```python
   from kivy.clock import Clock
 
-  def on_cities(docs, error):
-      Clock.schedule_once(lambda dt: update_screen(docs))
+  def on_cities(snapshot, error):
+      Clock.schedule_once(lambda dt: update_screen(snapshot))
   ```
-- **Blocks stay alive for you.** The wrapper keeps each callback block in memory
-  until Firebase is done with it. You do not need module-level variables.
+- **Blocks stay alive for you.** Every callback block is kept in memory until
+  Firebase is done with it (listener blocks: until `remove()`). You do not need
+  module-level variables.
 - **Security rules.** If your Firestore rules need a signed-in user, call these
   methods only after sign-in works. Otherwise you get "permission denied".
 - **Indexes.** Some queries need an index (many filters, or a filter plus an order
@@ -674,7 +846,8 @@ If you update the Firebase SDK, check these values in the SDK header files
   Use `query_limited_to` or an aggregate query when you can.
 - **`update_data` needs an existing document.** To create it if it is missing, use
   `set_data`.
-- **`set_data` replaces the whole document.** Old fields are lost.
+- **`set_data` replaces the whole document.** Old fields are lost, unless you pass
+  `merge=True`.
 
 ---
 
@@ -682,23 +855,102 @@ If you update the Firebase SDK, check these values in the SDK header files
 
 | Problem | What to check |
 |---|---|
-| `class not found` (for example `FIRFirestore`) | The Firebase framework is not part of your iOS build |
-| `Firebase sign-in error: An internal error has occurred` | Print `error.code`, `error.userInfo`, and the underlying error. Common causes: missing Keychain Sharing, wrong `GoogleService-Info.plist`, Google sign-in not enabled, API key limits, App Check enforcement without a registered debug token |
+| `NameError: ... FIRFirestore` (or another `FIR...` class) | That Firebase framework is not part of your iOS build |
+| `Firebase sign-in error: An internal error has occurred` | Print `error.code`, `error.domain` and `error.underlying_error`. Common causes: missing Keychain Sharing, wrong `GoogleService-Info.plist`, sign-in provider not enabled, API key limits, App Check enforcement without a registered debug token |
 | `permission denied` | Your Firestore rules need a signed-in user, or the rules do not allow this read or write |
-| `FIRApp.defaultApp` is `None` | `FIRApp.configure()` was not called, or it was called too late |
-| App Check blocks requests | Set the provider factory **before** `FIRApp.configure()`, and add the debug token in the Firebase console |
-| The app crashes when a callback runs | The callback block was deleted too early. Use the wrapper methods, or keep your own blocks in a module-level variable |
+| `core.default_app()` is `None` | `core.configure()` was not called, or it was called too late |
+| App Check blocks requests | Call `initialize_debug_appcheck()` **before** `core.configure()`, and add the debug token in the Firebase console |
 | A query fails with an index error | Open the link in the error message and create the index |
-| `document.data` has odd types | Values from Firestore may be Objective-C objects. Open an issue and tell us the Rubicon version and what `type(...)` prints |
+| `snapshot.data` has odd types | Some Firestore values stay Objective-C objects (see [Python values and Firestore types](#python-values-and-firestore-types)). Open an issue and tell us the Rubicon version and what `type(...)` prints |
 
 ---
 
-## Migrating from pyobjus-firebase
+## Migrating
+
+### From the flat 0.1 modules
+
+Firebase Core and Firestore are now subpackages:
+
+| Before | Now |
+|---|---|
+| `pyios_firebase.firapp.configure()` | `pyios_firebase.core.configure()` |
+| `pyios_firebase.firfirestore`, `firfieldvalue`, `firfilter` | `pyios_firebase.firestore` |
+| `pyios_firebase.firappcheck`, `firuser`, `firgoogleauth` | unchanged in this release |
+
+Firestore changes:
+
+- Reads give snapshots: `get_document` gives a `DocumentSnapshot`, and
+  `get_documents` / query listeners give a `QuerySnapshot` (iterate it like the
+  old list).
+- `add_snapshot_listener_for_changes` is gone: use `snapshot.document_changes`.
+- `DocumentReference.set_data(data, callback)` is now
+  `set_data(data, merge=False, callback=None)`. The old `set_data(data, callback)` still works.
+- `FIRAggregateSource` and the other enums are in `pyios_firebase.firestore`.
+- Any exception raised in a transaction function now stops the transaction, and
+  the callback gets the Python value you returned (not an Objective-C object).
+- Errors also have a `domain` key.
+- Booleans are now read as `True` / `False`. Before, they came back as `1` / `0`.
+- `None` in data you write is stored as `null`. Before, it crashed the app.
+- `datetime` values can be written and used in queries.
+- Unsupported values raise `TypeError` in Python instead of failing inside the SDK.
+- `snapshot.metadata.is_from_cache`, `snapshot.metadata.has_pending_writes` and
+  `query_snapshot.is_empty` were always `True` (they read Objective-C custom
+  getters without calling them). They now give the real value; code that relied
+  on them, for example to skip pending local writes, behaves differently.
+
+### From pyobjus-firebase
 
 1. Install `pyios-firebase` and follow [Setup](#setup).
 2. Replace the `pyobjus-firebase` imports in your code with the new ones.
 3. Delete any `.m` or `.h` files you added only for `pyobjus-firebase`.
 4. If something does not work, open an issue in this repository.
+
+---
+
+## Development
+
+```bash
+uv sync --group dev
+uv run pytest      # tests
+uv run mypy        # strict type check of the package and of tests/typing
+uv run pyright     # the checker behind VS Code's Pylance
+uv run ruff check
+```
+
+### End-to-end tests on the iOS Simulator
+
+```bash
+e2e/run_ios_e2e.sh
+```
+
+This builds a small Kivy app (`e2e/ios/`) with the wheel from your checkout and
+the real Firebase iOS SDK, runs it in the iOS Simulator against the local
+Firestore emulator, and exits non-zero if any test fails. It covers every value
+type, writes and field values, merges, queries and cursors, OR/AND filters,
+collection groups, aggregates, listeners and their change types, batches,
+transactions, and read sources.
+
+It needs Xcode with an iOS simulator, [uv](https://docs.astral.sh/uv/),
+`firebase-tools` (`npm i -g firebase-tools`) and Java 21+ for the emulator. It
+uses the offline `demo-pyios-firebase` project: no Firebase account or
+credentials. `E2E_DEVICE` picks the simulator (default `iPhone 17`). The first
+build takes a few minutes; results, the app log and a screenshot land in
+`e2e/ios/build/e2e/`.
+
+Unit tests run fake Firebase objects; the end-to-end suite is what catches
+mismatches with the real SDK. It found three bugs the unit tests could not.
+
+`tests/test_docs.py` fails if a public function or method has a parameter its
+`Args:` docs do not describe (or describes one it does not have).
+
+`tests/typing/check_public_api.py` is type-checked, never run: it uses the
+public API the way an app does, asserts what the checker infers, and lists
+mistakes the types must keep catching.
+
+The tests run on macOS: Rubicon works there, and fake Firebase objects call
+the real callback blocks. They check callbacks, errors, block lifetimes,
+transactions, and value conversion. They do not replace testing on a device
+with the real Firebase SDK.
 
 ---
 

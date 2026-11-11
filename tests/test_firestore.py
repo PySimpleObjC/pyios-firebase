@@ -1,0 +1,260 @@
+from ctypes import pointer
+
+import pytest
+from conftest import Recorder, fire, make_error
+from rubicon.objc import NSObject, ObjCInstance, objc_id
+
+from pyios_firebase.firestore import (
+    CollectionReference,
+    DocumentReference,
+    DocumentSnapshot,
+    Firestore,
+    Query,
+    QuerySnapshot,
+    TransactionException,
+    WriteBatch,
+)
+
+
+def test_get_documents_success_and_error(blocks):
+    ref, out = Recorder(), []
+    Query(ref).get_documents(lambda s, e: out.append((s, e)))
+    assert (
+        len(blocks) == 1
+    )  # alive until Firestore answers, even with no other reference
+
+    fire(ref.block("getDocumentsWithCompletion_"), NSObject.new(), None)
+    snapshot, error = out[-1]
+    assert isinstance(snapshot, QuerySnapshot) and error is None
+    assert not blocks
+
+    Query(ref).get_documents(lambda s, e: out.append((s, e)))
+    fire(ref.block(), None, make_error())
+    assert out[-1][0] is None and out[-1][1].description == "permission denied"
+    assert not blocks
+
+
+def test_get_documents_with_source():
+    ref = Recorder()
+    Query(ref).get_documents(lambda s, e: None, source=2)
+    assert (
+        ref.calls[-1][0] == "getDocumentsWithSource_completion_" and ref.last()[0] == 2
+    )
+
+
+def test_document_get_gives_snapshot(blocks):
+    ref, out = Recorder(), []
+    DocumentReference(ref).get_document(lambda s, e: out.append((s, e)))
+    fire(ref.block("getDocumentWithCompletion_"), NSObject.new(), None)
+    assert isinstance(out[-1][0], DocumentSnapshot)
+    assert not blocks
+
+
+@pytest.mark.parametrize("callback", [None, "record"])
+def test_writes_call_back_with_error(blocks, callback):
+    ref, out = Recorder(), []
+    cb = out.append if callback else None
+    doc = DocumentReference(ref)
+    doc.update_data({"a": 1}, cb)
+    fire(ref.block("updateData_completion_"), None)
+    doc.delete_document(cb)
+    fire(ref.block("deleteDocumentWithCompletion_"), make_error())
+    if callback:
+        assert out[0] is None and out[1].code == 7
+    assert not blocks
+
+
+def test_set_data_forms():
+    ref, out = Recorder(), []
+    doc = DocumentReference(ref)
+
+    doc.set_data({"a": 1})
+    assert ref.calls[-1][0] == "setData_completion_"
+
+    doc.set_data({"a": 1}, merge=True, callback=out.append)
+    assert ref.calls[-1][0] == "setData_merge_completion_"
+
+    # the 0.1 form: set_data(data, callback) must not turn into merge=True
+    doc.set_data({"a": 1}, out.append)
+    assert ref.calls[-1][0] == "setData_completion_"
+    fire(ref.block(), None)
+    assert out == [None]
+
+
+def test_snapshot_listener_lifetime(blocks):
+    registration = Recorder()
+    ref, out = Recorder({"addSnapshotListener_": registration}), []
+    listener = Query(ref).add_snapshot_listener(lambda s, e: out.append(e))
+    block = ref.block("addSnapshotListener_")
+    fire(block, None, make_error())
+    fire(block, None, make_error())
+    assert len(out) == 2 and block in blocks  # still alive between calls
+
+    listener.remove()
+    listener.remove()  # safe twice
+    assert [c[0] for c in registration.calls] == ["remove"]
+    assert not blocks
+
+
+def test_snapshot_listener_options():
+    ref = Recorder()
+    DocumentReference(ref).add_snapshot_listener(
+        lambda s, e: None, include_metadata_changes=True
+    )
+    assert ref.calls[-1][0] == "addSnapshotListenerWithIncludeMetadataChanges_listener_"
+
+
+def test_add_document_gives_reference(blocks):
+    new_ref = Recorder()
+    ref, out = Recorder({"addDocumentWithData_completion_": new_ref}), []
+    returned = CollectionReference(ref).add_document_with_data(
+        {"a": 1}, lambda r, e: out.append((r, e))
+    )
+    fire(ref.block(), None)
+    assert out[0][0] is returned and returned._ref is new_ref and out[0][1] is None
+    assert not blocks
+
+
+def test_start_after_document_needs_a_snapshot():
+    with pytest.raises(ValueError, match="DocumentSnapshot"):
+        Query(Recorder()).query_starting_after_document(DocumentReference(Recorder()))
+
+
+def test_write_batch_chains():
+    native = Recorder()
+    a, b = DocumentReference(Recorder()), DocumentReference(Recorder())
+    batch = WriteBatch(native)
+    assert batch.set_data({}, a).update_data({"x": 1}, b).delete_document(a) is batch
+    assert [c[0] for c in native.calls] == [
+        "setData_forDocument_",
+        "updateData_forDocument_",
+        "deleteDocument_",
+    ]
+
+
+def _run_transaction(update_fn):
+    db_native, out = Recorder(), []
+    Firestore(db_native).run_transaction(update_fn, lambda r, e: out.append((r, e)))
+    update_block, done_block = db_native.last("runTransactionWithBlock_completion_")
+    return update_block, done_block, out
+
+
+def test_transaction_passes_python_result(blocks):
+    runs = []
+    update, done, out = _run_transaction(
+        lambda t: runs.append(1) or {"runs": len(runs)}
+    )
+    error_pointer = pointer(objc_id())
+    fire(update, NSObject.new(), error_pointer)
+    fire(update, NSObject.new(), error_pointer)  # Firestore retried
+    assert blocks  # the update block lives until the end
+    fire(done, None, None)
+    assert out == [({"runs": 2}, None)]
+    assert not blocks
+
+
+@pytest.mark.parametrize(
+    "exc", [TransactionException("too big"), ValueError("too big")]
+)
+def test_transaction_exception_sets_error(blocks, exc):
+    def update_fn(transaction):
+        raise exc
+
+    update, done, out = _run_transaction(update_fn)
+    error_pointer = pointer(objc_id())
+    fire(update, NSObject.new(), error_pointer)
+    assert str(ObjCInstance(error_pointer[0]).localizedDescription) == "too big"
+    fire(done, None, ObjCInstance(error_pointer[0]))
+    assert out[0][0] is None and out[0][1].description == "too big"
+    assert not blocks
+
+
+def test_transaction_keeps_firestore_error():
+    firestore_error = make_error("aborted", 10)
+
+    def update_fn(transaction):
+        raise ValueError("mine")
+
+    update, _, _ = _run_transaction(update_fn)
+    error_pointer = pointer(objc_id(firestore_error.ptr.value))
+    fire(update, NSObject.new(), error_pointer)
+    assert str(ObjCInstance(error_pointer[0]).localizedDescription) == "aborted"
+
+
+def test_use_emulator_sets_host_and_turns_tls_off():
+    class Settings:
+        sslEnabled = True
+
+        def copy(self):
+            copied = Settings()
+            copied.sslEnabled = self.sslEnabled
+            return copied
+
+    class FakeDb:
+        def __init__(self):
+            self.settings = Settings()
+            self.emulator = None
+
+        def useEmulatorWithHost_port_(self, host, port):
+            self.emulator = (host, port)
+
+    db = FakeDb()
+    original = db.settings
+    Firestore(db).use_emulator("127.0.0.1", 8080)
+    assert db.emulator == ("127.0.0.1", 8080)
+    assert db.settings.sslEnabled is False
+    # a new settings object is assigned: the SDK only applies settings on assignment
+    assert db.settings is not original
+
+
+class _CustomGetters:
+    """Like Rubicon: Objective-C custom getters (getter=isX) are methods, so
+    reading them without calling gives a bound method, which is truthy."""
+
+    def __init__(self, **values):
+        for name, value in values.items():
+            setattr(self, name, lambda value=value: value)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_snapshot_metadata_calls_custom_getters(value):
+    from pyios_firebase.firestore import SnapshotMetadata
+
+    metadata = SnapshotMetadata(
+        _CustomGetters(isFromCache=value, hasPendingWrites=value)
+    )
+    assert metadata.is_from_cache is value
+    assert metadata.has_pending_writes is value
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_query_snapshot_is_empty_calls_custom_getter(value):
+    assert QuerySnapshot(_CustomGetters(isEmpty=value)).is_empty is value
+
+
+# Objective-C properties with a custom getter in the SDK headers the package
+# wraps. Rubicon only exposes them as methods: they must always be called.
+CUSTOM_GETTERS = (
+    "isFromCache",
+    "hasPendingWrites",
+    "isEmpty",
+    "isSSLEnabled",
+    "isKeyWindow",
+)
+
+
+def test_custom_getters_are_always_called():
+    import pathlib
+    import re
+
+    package = pathlib.Path(__file__).parent.parent / "src" / "pyios_firebase"
+    uncalled = re.compile(r"\.(" + "|".join(CUSTOM_GETTERS) + r")\b(?!\s*\()")
+    offenders = [
+        f"{path.relative_to(package)}:{number}: {line.strip()}"
+        for path in package.rglob("*.py")
+        for number, line in enumerate(path.read_text().splitlines(), 1)
+        if uncalled.search(line.split("#", 1)[0])
+    ]
+    assert not offenders, "custom getters read without calling them:\n" + "\n".join(
+        offenders
+    )
