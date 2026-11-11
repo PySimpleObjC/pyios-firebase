@@ -31,6 +31,29 @@ def test_call_sends_json_and_gives_python(blocks):
     assert not blocks
 
 
+def test_ints_are_sent_as_plain_json_numbers(blocks):
+    # "q" (long long) would be wrapped by the SDK as an Int64Value object
+    native = Recorder()
+    big = 2**60
+    HTTPSCallable(native).call(
+        lambda d, e: None,
+        {"small": 5, "neg": -(2**31), "mid": 3_000_000_000, "big": big},
+    )
+    sent = native.calls[-1][1][0]
+    types = {
+        key: sent.objectForKey_(key).objCType for key in ("small", "neg", "mid", "big")
+    }
+    assert types["small"] == types["neg"] == b"i"
+    assert types["mid"] == b"d"
+    assert types["big"] == b"q"
+    assert to_python(sent) == {"small": 5, "neg": -(2**31), "mid": 3e9, "big": big}
+    # NSJSONSerialization (what the SDK sends) writes the double as an integer
+    json = ObjCClass("NSJSONSerialization").dataWithJSONObject_options_error_(
+        sent.objectForKey_("mid"), 4, None
+    )
+    assert bytes(to_python(json)) == b"3000000000"
+
+
 def test_call_without_data(blocks):
     native = Recorder()
     HTTPSCallable(native).call(lambda d, e: None)
@@ -46,6 +69,9 @@ def test_call_without_data(blocks):
         ),
         ({"s": {1, 2}}, "cannot send a set"),
         ({1: "x"}, "keys must be str"),
+        ({"score": float("nan")}, r"score: JSON cannot carry nan"),
+        ([1.0, float("inf")], r"\[1\]: JSON cannot carry inf"),
+        (float("-inf"), r"data: JSON cannot carry -inf"),
     ],
 )
 def test_call_refuses_non_json_data(data, message):

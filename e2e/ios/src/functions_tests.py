@@ -1,5 +1,5 @@
 """End-to-end Cloud Functions tests: the real SDK against the Functions emulator
-(e2e/functions/index.js)."""
+(e2e/functions/main.py, Python Cloud Functions)."""
 
 from __future__ import annotations
 

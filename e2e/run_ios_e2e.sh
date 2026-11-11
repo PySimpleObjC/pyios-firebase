@@ -5,8 +5,8 @@
 #
 #   e2e/run_ios_e2e.sh
 #
-# Needs: Xcode with an iOS simulator, uv, firebase-tools (npm i -g firebase-tools),
-# npm (for the e2e functions' dependencies), and Java 21+ for the emulators
+# Needs: Xcode with an iOS simulator, uv (also builds the Python functions'
+# venv), firebase-tools, and Java 21+ for the emulators
 # (JAVA_HOME, or any JDK java_home can find).
 #
 # Environment:
@@ -86,10 +86,11 @@ pick_java() {
 
 # ---- 2. the emulators ---------------------------------------------------------
 listening() { curl -s -o /dev/null --max-time 2 "http://$1/"; }
-if [[ ! -d "$HERE/functions/node_modules" ]]; then
-  command -v npm >/dev/null || die "npm not found (needed for e2e/functions)"
-  say "installing the e2e functions' dependencies"
-  (cd "$HERE/functions" && npm install --no-audit --no-fund --loglevel=error)
+if [[ ! -x "$HERE/functions/venv/bin/python" ]]; then
+  # the emulator runs Python functions from functions/venv (runtime python313)
+  say "creating the e2e functions' venv"
+  (cd "$HERE/functions" && uv venv --quiet --python 3.13 venv \
+     && uv pip install --quiet --python venv/bin/python -r requirements.txt)
 fi
 if listening "$EMULATOR" && listening "$AUTH_EMULATOR" && listening "$FUNCTIONS_EMULATOR" && listening "$STORAGE_EMULATOR"; then
   say "reusing the emulators already running (Firestore, Auth, Functions, Storage)"

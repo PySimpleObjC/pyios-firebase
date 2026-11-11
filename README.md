@@ -1013,7 +1013,10 @@ add_message.call(on_result, {"text": "Hello", "tags": ["a", "b"]})
 ```
 
 - `data` goes as JSON: dicts, lists, tuples, strings, numbers, bools and `None`.
-  Anything else (a `datetime`, a `set`) raises `TypeError` before anything is sent.
+  Anything else (a `datetime`, a `set`, `nan`, `inf`) raises `TypeError` before
+  anything is sent. Ints go as plain JSON numbers, so Python and Node.js functions
+  both get an `int`. Only ints beyond ±2^53 use the SDK's `Int64Value` wrapper,
+  which keeps them exact; the Python Functions SDK does not unwrap it.
 - `error` is a `FunctionsError`: `code` (`FunctionsErrorCode`), `name`, `description`
   and `details` (what the function put in its `HttpsError`). An unexpected error in
   the function is `INTERNAL`, without its message.
@@ -1555,11 +1558,13 @@ fails.
   phone sign-in, profile and tokens, re-authentication, password change and
   account deletion, password reset, email verification, email link sign-in,
   SMS multi-factor enrollment and sign-in, passing state in email links, the
-  shared keychain, OAuth providers, and the Facebook SDK bridge.
+  shared keychain, OAuth providers, and the Facebook SDK bridge. The emails and
+  SMS codes are read from the Auth emulator's REST API. TOTP is skipped: the Auth
+  emulator supports only SMS second factors.
 - Functions: JSON round trip, `HttpsError` codes and details, unexpected errors,
   unknown functions, timeouts, the Auth context, regions, calls by URL, App
-  Check tokens (normal and limited-use), and non-JSON data. The functions are in
-  `e2e/functions/index.js`.
+  Check tokens (normal and limited-use), and non-JSON data. The functions are
+  Python Cloud Functions (`firebase_functions`) in `e2e/functions/main.py`.
 - Storage: references, upload with metadata, metadata update and delete, download
   URL, download to memory and to a file, file upload, listing and paging, upload
   progress, cancel, and errors.
@@ -1568,13 +1573,11 @@ fails.
   the update listener.
 - App Check: a Python custom provider serving the whole app, tokens and
   limited-use tokens, the token listener, settings, and the debug token from
-  `FIRAAppCheckDebugToken`. The emails and
-  SMS codes are read from the Auth emulator's REST API. TOTP is skipped: the Auth
-  emulator supports only SMS second factors.
+  `FIRAAppCheckDebugToken`.
 
 It needs Xcode with an iOS simulator, [uv](https://docs.astral.sh/uv/),
-`firebase-tools` (`npm i -g firebase-tools`), npm (the first run installs the e2e
-functions' dependencies) and Java 21+ for the emulators. It
+`firebase-tools` and Java 21+ for the emulators. The first run creates a Python
+3.13 venv for the e2e functions with uv. It
 uses the offline `demo-pyios-firebase` project: no Firebase account or
 credentials. `E2E_DEVICE` picks the simulator (default `iPhone 17`). The first
 build takes a few minutes; results, the app log and a screenshot land in

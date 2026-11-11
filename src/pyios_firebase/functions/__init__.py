@@ -31,6 +31,7 @@ __all__ = (
     "HTTPSCallable",
 )
 
+import math
 from collections.abc import Callable, Mapping
 from typing import Any, ClassVar, Final
 
@@ -103,11 +104,40 @@ def _error_to_python(error: ObjCObject) -> FunctionsError:
     return result
 
 
+_INT32: Final = 2**31
+_EXACT_DOUBLE: Final = 2**53
+
+
+def _int_to_number(value: int) -> Any:
+    """An ``NSNumber`` the SDK sends as a plain JSON number when it can.
+
+    Rubicon makes every ``int`` a ``long long``, and the SDK sends those as an
+    ``Int64Value`` object (``{"@type": ..., "value": "5"}``) that some servers
+    (the Python Functions SDK) do not unwrap. Ints that fit a 32-bit int, or a
+    double exactly, go as plain numbers; bigger ones keep the wrapper so they
+    arrive exactly.
+    """
+    number = objc_class("NSNumber")
+    if -_INT32 <= value < _INT32:
+        return number.numberWithInt_(value)
+    if -_EXACT_DOUBLE <= value <= _EXACT_DOUBLE:
+        return number.numberWithDouble_(float(value))  # JSON writes it with no ".0"
+    return value
+
+
 def _to_json_value(value: Any, path: str) -> Any:
     """Python data for a callable: JSON values only (the protocol is JSON)."""
     if value is None:
         return objc_class("NSNull").null()  # NSDictionary/NSArray cannot hold nil
-    if isinstance(value, str | bool | int | float):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return _int_to_number(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        # the SDK's JSONSerialization raises an Objective-C exception on these,
+        # which aborts the app
+        raise TypeError(f"{path or 'data'}: JSON cannot carry {value!r}")
+    if isinstance(value, str | float):
         return value
     if isinstance(value, Mapping):
         result: dict[str, Any] = {}
@@ -160,7 +190,7 @@ class HTTPSCallable:
 
         Raises:
             TypeError: ``data`` holds a value JSON cannot carry (for example a
-                ``datetime`` or a ``set``). Nothing is sent.
+                ``datetime``, a ``set``, ``nan`` or ``inf``). Nothing is sent.
         """
 
         def on_done(result_ptr: Any, error_ptr: Any) -> None:
