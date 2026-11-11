@@ -87,6 +87,10 @@ cities.query_where_field_not_in("country", ["USA", "Japan"])
 | `query_where_field_in` | is one of the values (up to 30) |
 | `query_where_field_not_in` | is none of the values (up to 10) |
 
+An empty list, a list with more values than the limit, or a `str` instead of a
+list raises `ValueError` / `TypeError` before the query is made. The SDK would
+abort the app on an empty list, and the server would reject a long one.
+
 Several filters are joined with **AND**. Filter values are converted like any
 value: compare timestamps with a `datetime`, references with a
 `DocumentReference`.

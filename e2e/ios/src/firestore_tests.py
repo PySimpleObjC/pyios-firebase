@@ -331,6 +331,42 @@ def test_queries(t: TestContext) -> None:
     _seed_cities(t, t.step(run))
 
 
+def test_list_filter_limits(t: TestContext) -> None:
+    """in / not-in / array-contains-any: the most values work through the SDK; an
+    empty or too long list raises in Python (an empty one would abort the app)."""
+    filler = [f"nowhere-{i}" for i in range(30)]
+
+    def run(cities) -> None:
+        for name, call in [
+            ("empty in", lambda: cities.query_where_field_in("name", [])),
+            ("empty not-in", lambda: cities.query_where_field_not_in("name", [])),
+            ("11 not-in", lambda: cities.query_where_field_not_in("name", filler[:11])),
+            ("31 in", lambda: cities.query_where_field_in("name", filler + ["x"])),
+            ("a str", lambda: cities.query_where_field_in("name", "Tokyo")),
+        ]:
+            try:
+                call()
+            except (ValueError, TypeError):
+                continue
+            raise AssertionError(f"{name}: accepted")
+
+        def got_not_in(snapshot, error) -> None:
+            expect(error is None, f"10 not-in values: {error}")
+            expect_equal(sorted(_ids(snapshot)), ["BJ", "LA", "SF"], "not-in with 10 values")
+            cities.query_where_field_in("name", ["Tokyo"] + filler[:29]).get_documents(t.step(got_in))
+
+        def got_in(snapshot, error) -> None:
+            expect(error is None, f"30 in values: {error}")
+            expect_equal(_ids(snapshot), ["TOK"], "in with 30 values")
+            t.passed()
+
+        cities.query_where_field_not_in("name", ["Tokyo", "Washington"] + filler[:8]).get_documents(
+            t.step(got_not_in)
+        )
+
+    _seed_cities(t, t.step(run))
+
+
 def test_collection_group(t: TestContext) -> None:
     group = f"landmarks_{RUN_ID}"
     batch = db().batch()

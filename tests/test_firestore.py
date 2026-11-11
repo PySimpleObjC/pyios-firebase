@@ -258,3 +258,64 @@ def test_custom_getters_are_always_called():
     assert not offenders, "custom getters read without calling them:\n" + "\n".join(
         offenders
     )
+
+
+# ---- in / not-in / array-contains-any value lists ---------------------------------
+
+LIST_FILTERS = [
+    ("query_where_field_in", "queryWhereField_in_", 30),
+    ("query_where_field_array_contains_any", "queryWhereField_arrayContainsAny_", 30),
+    ("query_where_field_not_in", "queryWhereField_notIn_", 10),
+]
+
+
+@pytest.mark.parametrize(("method", "selector", "limit"), LIST_FILTERS)
+def test_list_filters_send_up_to_their_limit(method, selector, limit):
+    ref = Recorder()
+    getattr(Query(ref), method)("country", ["v"] * limit)
+    name, (field, values) = ref.calls[-1]
+    assert (name, field, len(values)) == (selector, "country", limit)
+    getattr(Query(ref), method)("country", ("USA", "Japan"))  # a tuple is a list too
+    assert len(ref.calls[-1][1][1]) == 2
+
+
+@pytest.mark.parametrize(("method", "selector", "limit"), LIST_FILTERS)
+def test_list_filters_raise_instead_of_aborting(method, selector, limit):
+    ref = Recorder()
+    query = getattr(Query(ref), method)
+    with pytest.raises(ValueError, match="need at least one value"):
+        query("country", [])  # the SDK raises an Objective-C exception: the app aborts
+    with pytest.raises(ValueError, match=f"at most {limit} values, not {limit + 1}"):
+        query("country", ["v"] * (limit + 1))
+    with pytest.raises(TypeError, match="take a list of values, not str"):
+        query("country", "USA")  # the SDK asserts the value is an array
+    with pytest.raises(TypeError, match="take a list of values, not int"):
+        query("country", 3)
+    assert not ref.calls  # nothing reached the SDK
+
+
+@pytest.mark.parametrize(
+    ("method", "selector", "limit"),
+    [
+        ("filter_where_field_in", "filterWhereField_in_", 30),
+        (
+            "filter_where_field_array_contains_any",
+            "filterWhereField_arrayContainsAny_",
+            30,
+        ),
+        ("filter_where_field_not_in", "filterWhereField_notIn_", 10),
+    ],
+)
+def test_filter_lists_are_checked_too(monkeypatch, method, selector, limit):
+    from pyios_firebase.firestore import Filter
+
+    fake = Recorder()
+    monkeypatch.setattr("pyios_firebase.firestore.filter._fir_filter", lambda: fake)
+    getattr(Filter, method)("country", ["v"] * limit)
+    assert fake.calls[-1][0] == selector
+    for bad in ([], ["v"] * (limit + 1)):
+        with pytest.raises(ValueError):
+            getattr(Filter, method)("country", bad)
+    with pytest.raises(TypeError):
+        getattr(Filter, method)("country", "USA")
+    assert len(fake.calls) == 1
