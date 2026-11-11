@@ -1,0 +1,39 @@
+# The end-to-end test app: runs pyios-firebase against the Firebase emulators
+# in the iOS Simulator. Run it with ../run_ios_e2e.sh, not directly.
+
+[project]
+name = "pyios-firebase-e2e"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "kivy",
+    "rubicon-objc>=0.5.7",
+    # the wheel built from this checkout by run_ios_e2e.sh (wheels/)
+    "pyios-firebase==0.2.0",
+]
+
+[tool.kivy]
+display_name = "pyios e2e"
+app_dir = "src"
+entry_point = "main"
+orientation = ["portrait"]
+
+[tool.kivy.ios]
+schema_version = 1
+bundle_id = "io.github.pysimpleobjc.pyiosfirebase.e2e"
+build = 1
+deployment_target = "15.0"
+find_links = ["wheels"]
+extra_index_urls = ["https://elliotgarbus.github.io/kivy-mobile-wheels/simple/"]
+exclude = ["kivy-garden", "requests", "charset-normalizer", "idna", "urllib3", "docutils", "pygments"]
+
+[tool.kivy.ios.python]
+version = "3.15.2"
+
+[tool.kivy.ios.native.swift_packages.Firebase]
+url = "https://github.com/firebase/firebase-ios-sdk.git"
+requirement = { from = "13.1.1" }
+products = ["FirebaseFirestore"]
+
+[tool.kivy.ios.xcode.build_settings]
+OTHER_LDFLAGS = "$(inherited) -ObjC"
