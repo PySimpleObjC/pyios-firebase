@@ -21,6 +21,7 @@ import pytest
         "pyios_firebase.functions",
         "pyios_firebase.messaging",
         "pyios_firebase.messaging.notifications",
+        "pyios_firebase.performance",
         "pyios_firebase.remote_config",
         "pyios_firebase.storage",
         "pyios_firebase.types",

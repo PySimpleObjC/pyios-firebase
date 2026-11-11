@@ -47,6 +47,7 @@ products = [
     "FirebaseFirestore",
     "FirebaseFunctions",
     "FirebaseMessaging",
+    "FirebasePerformance",
     "FirebaseRemoteConfig",
     "FirebaseStorage",
 ]

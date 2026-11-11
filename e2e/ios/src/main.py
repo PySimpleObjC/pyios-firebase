@@ -1,7 +1,7 @@
 """pyios-firebase end-to-end test app.
 
 Runs the Firestore, Auth, Functions, Storage, Realtime Database, Remote
-Config, App Check, Analytics, Crashlytics and Messaging suites against the
+Config, App Check, Analytics, Crashlytics, Messaging and Performance suites against the
 local Firebase emulators through the real Firebase iOS SDK, shows the results
 on screen, prints them (prefix ``PYIOS-E2E``), and writes them to
 ``Documents/pyios-e2e-results.json``.
@@ -113,6 +113,7 @@ class E2EApp(App):
             from firestore_tests import TESTS as FIRESTORE_TESTS
             from functions_tests import TESTS as FUNCTIONS_TESTS
             from messaging_tests import TESTS as MESSAGING_TESTS
+            from performance_tests import TESTS as PERFORMANCE_TESTS
             from remote_config_tests import TESTS as REMOTE_CONFIG_TESTS
             from storage_tests import TESTS as STORAGE_TESTS
 
@@ -123,6 +124,7 @@ class E2EApp(App):
                     FIRESTORE_TESTS + AUTH_TESTS + FUNCTIONS_TESTS + STORAGE_TESTS
                     + DATABASE_TESTS + REMOTE_CONFIG_TESTS + APP_CHECK_TESTS
                     + ANALYTICS_TESTS + CRASHLYTICS_TESTS + MESSAGING_TESTS
+                    + PERFORMANCE_TESTS
                 )
             from runner import Runner, dumps
         except Exception:  # noqa: BLE001
