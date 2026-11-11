@@ -198,3 +198,29 @@ landmarks.get_documents(on_landmarks)
 ```
 
 Reading a document does **not** read its sub-collections.
+
+## Mistakes that would abort the app
+
+The Firestore SDK checks a query as you build it, and raises an Objective-C
+exception on a mistake, which ends the app (Python cannot catch it).
+pyios-firebase makes the same checks first and raises `ValueError` (or
+`TypeError`) at the call that made the mistake:
+
+| Mistake | Raised by |
+|---|---|
+| Two `not-in` filters, or `not-in` with `in`, `array-contains-any` or `!=` (in the query, or inside an OR / AND `Filter`) | The filter call |
+| Two `!=` filters | The filter call |
+| An empty `in` / `not-in` / `array-contains-any` list, or a `str` instead of a list | The filter call |
+| A limit below 1 (2,147,483,647 or more means no limit, as in the SDK) | `query_limited_to`, `query_limited_to_last` |
+| `query_ordered_by_field` after a start or end point | `query_ordered_by_field` |
+| More cursor values than `query_ordered_by_field` calls | `query_*_values` |
+| A cursor document that does not exist, lacks an ordered field, or has a server timestamp not written yet in it | `query_*_document` |
+| `query_limited_to_last` without an order | `get_documents`, `add_snapshot_listener` |
+
+These checks follow the SDK's own rules, so a query the SDK accepts is never
+refused. A `Query` made from a native query (for example `snapshot.query`) is
+not checked: pyios-firebase does not know what it holds.
+
+Too many `in` (30) or `not-in` (10) values are rejected by the server, not
+the SDK; pyios-firebase raises `ValueError` for those before sending too.
+
