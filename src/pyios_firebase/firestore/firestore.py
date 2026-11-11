@@ -118,7 +118,9 @@ class Firestore:
         Returns:
             A ``Query`` over all the documents of those collections.
         """
-        return query.Query(self._db.collectionGroupWithID_(collection_id))
+        from ._query_state import EMPTY
+
+        return query.Query(self._db.collectionGroupWithID_(collection_id), EMPTY)
 
     def document_with_path(self, path: str) -> document_reference.DocumentReference:
         """A document, by its full path.

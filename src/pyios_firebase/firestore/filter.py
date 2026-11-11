@@ -12,6 +12,7 @@ from rubicon.objc import ObjCClass
 from ..types import ObjCObject
 from ..util import objc_class, to_firestore
 from ._limits import MAX_ARRAY_CONTAINS_ANY, MAX_IN, MAX_NOT_IN, filter_values
+from ._query_state import Part
 
 
 def _fir_filter() -> ObjCClass:
@@ -36,8 +37,10 @@ class Filter:
         filter_: the native ``FIRFilter``.
     """
 
-    def __init__(self, filter_: ObjCObject) -> None:
+    def __init__(self, filter_: ObjCObject, _parts: tuple[Part, ...] = ()) -> None:
         self._filter = filter_
+        # its field filters, flattened: Query checks them like the SDK does
+        self._parts = _parts
 
     # ---- single-field filters ----
 
@@ -57,7 +60,8 @@ class Filter:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
         return Filter(
-            _fir_filter().filterWhereField_isEqualTo_(field, to_firestore(value))
+            _fir_filter().filterWhereField_isEqualTo_(field, to_firestore(value)),
+            (("==", field),),
         )
 
     @staticmethod
@@ -78,7 +82,8 @@ class Filter:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
         return Filter(
-            _fir_filter().filterWhereField_isNotEqualTo_(field, to_firestore(value))
+            _fir_filter().filterWhereField_isNotEqualTo_(field, to_firestore(value)),
+            (("!=", field),),
         )
 
     @staticmethod
@@ -100,7 +105,8 @@ class Filter:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
         return Filter(
-            _fir_filter().filterWhereField_isLessThan_(field, to_firestore(value))
+            _fir_filter().filterWhereField_isLessThan_(field, to_firestore(value)),
+            (("<", field),),
         )
 
     @staticmethod
@@ -124,7 +130,8 @@ class Filter:
         return Filter(
             _fir_filter().filterWhereField_isLessThanOrEqualTo_(
                 field, to_firestore(value)
-            )
+            ),
+            (("<=", field),),
         )
 
     @staticmethod
@@ -146,7 +153,8 @@ class Filter:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
         return Filter(
-            _fir_filter().filterWhereField_isGreaterThan_(field, to_firestore(value))
+            _fir_filter().filterWhereField_isGreaterThan_(field, to_firestore(value)),
+            ((">", field),),
         )
 
     @staticmethod
@@ -172,7 +180,8 @@ class Filter:
         return Filter(
             _fir_filter().filterWhereField_isGreaterThanOrEqualTo_(
                 field, to_firestore(value)
-            )
+            ),
+            ((">=", field),),
         )
 
     @staticmethod
@@ -191,7 +200,8 @@ class Filter:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
         return Filter(
-            _fir_filter().filterWhereField_arrayContains_(field, to_firestore(value))
+            _fir_filter().filterWhereField_arrayContains_(field, to_firestore(value)),
+            (("array-contains", field),),
         )
 
     @staticmethod
@@ -218,7 +228,8 @@ class Filter:
             _fir_filter().filterWhereField_arrayContainsAny_(
                 field,
                 filter_values(values, "array-contains-any", MAX_ARRAY_CONTAINS_ANY),
-            )
+            ),
+            (("array-contains-any", field),),
         )
 
     @staticmethod
@@ -242,7 +253,8 @@ class Filter:
         return Filter(
             _fir_filter().filterWhereField_in_(
                 field, filter_values(values, "in", MAX_IN)
-            )
+            ),
+            (("in", field),),
         )
 
     @staticmethod
@@ -268,7 +280,8 @@ class Filter:
         return Filter(
             _fir_filter().filterWhereField_notIn_(
                 field, filter_values(values, "not-in", MAX_NOT_IN)
-            )
+            ),
+            (("not-in", field),),
         )
 
     # ---- combine filters ----
@@ -283,7 +296,11 @@ class Filter:
         Returns:
             A ``Filter`` for ``Query.query_where_filter``.
         """
-        return Filter(_fir_filter().orFilterWithFilters_([f._filter for f in filters]))
+        filters = list(filters)
+        return Filter(
+            _fir_filter().orFilterWithFilters_([f._filter for f in filters]),
+            tuple(part for f in filters for part in f._parts),
+        )
 
     @staticmethod
     def and_filter_with_filters(filters: Iterable[Filter]) -> Filter:
@@ -295,4 +312,8 @@ class Filter:
         Returns:
             A ``Filter`` for ``Query.query_where_filter``.
         """
-        return Filter(_fir_filter().andFilterWithFilters_([f._filter for f in filters]))
+        filters = list(filters)
+        return Filter(
+            _fir_filter().andFilterWithFilters_([f._filter for f in filters]),
+            tuple(part for f in filters for part in f._parts),
+        )

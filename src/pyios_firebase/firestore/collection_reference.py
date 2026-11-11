@@ -17,6 +17,8 @@ from .query import Query
 class CollectionReference(Query):
     """A collection. It is also a ``Query`` for all of its documents."""
 
+    _fresh = True  # a new query: the SDK's checks are mirrored from here
+
     @property
     def collection_id(self) -> str:
         """The last part of the path. For ``"cities/SF/landmarks"`` it is ``"landmarks"``."""

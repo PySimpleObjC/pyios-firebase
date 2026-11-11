@@ -367,6 +367,54 @@ def test_list_filter_limits(t: TestContext) -> None:
     _seed_cities(t, t.step(run))
 
 
+def test_query_mistakes_raise_and_real_patterns_run(t: TestContext) -> None:
+    """Query mistakes the SDK would abort on raise in Python; the patterns the
+    SDK accepts (paging with an inequality filter, limit_to_last with an
+    order) still run through the real SDK."""
+
+    def run(cities) -> None:
+        for name, call in [
+            ("two not-in", lambda: cities.query_where_field_not_in("a", [1]).query_where_field_not_in("b", [2])),
+            ("not-in and in", lambda: cities.query_where_field_in("a", [1]).query_where_field_not_in("b", [2])),
+            ("limit 0", lambda: cities.query_limited_to(0)),
+            ("order after cursor", lambda: cities.query_ordered_by_field("population")
+                .query_starting_at_values([1]).query_ordered_by_field("name")),
+            ("too many cursor values", lambda: cities.query_ordered_by_field("population")
+                .query_starting_at_values([1, 2])),
+            ("limit_to_last without order", lambda: cities.query_limited_to_last(2).get_documents(lambda s, e: None)),
+        ]:
+            try:
+                call()
+            except ValueError:
+                continue
+            raise AssertionError(f"{name}: accepted")
+
+        big = cities.query_where_field_is_greater_than("population", 1_000_000)
+
+        def first_page(snapshot, error) -> None:
+            expect(error is None, error)
+            expect_equal(len(snapshot), 2, "first page")
+            # a document cursor on a query with an inequality filter: the SDK
+            # takes "population" from the document (normalized order)
+            big.query_starting_after_document(snapshot[-1]).get_documents(t.step(second_page))
+
+        def second_page(snapshot, error) -> None:
+            expect(error is None, error)
+            expect_equal(len(snapshot), 1, "second page")
+            cities.query_ordered_by_field("population").query_limited_to_last(1).get_documents(
+                t.step(last_one)
+            )
+
+        def last_one(snapshot, error) -> None:
+            expect(error is None, error)
+            expect_equal(_ids(snapshot), ["BJ"], "limit_to_last with an order")
+            t.passed()
+
+        big.query_limited_to(2).get_documents(t.step(first_page))
+
+    _seed_cities(t, t.step(run))
+
+
 def test_collection_group(t: TestContext) -> None:
     group = f"landmarks_{RUN_ID}"
     batch = db().batch()

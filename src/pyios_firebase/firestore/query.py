@@ -5,7 +5,8 @@ from __future__ import annotations
 __all__ = ("Query",)
 
 from collections.abc import Callable, Iterable, Sequence
-from typing import TYPE_CHECKING, Any
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from rubicon.objc import objc_id
 
@@ -19,8 +20,11 @@ from ..util import (
 )
 from . import query_snapshot  # module import: query_snapshot imports us back
 from ._limits import MAX_ARRAY_CONTAINS_ANY, MAX_IN, MAX_NOT_IN, filter_values
+from ._query_state import EMPTY, UNKNOWN, QueryState, check_limit
 from .aggregate import AggregateField, AggregateQuery
 from .listener_registration import ListenerRegistration, SnapshotListenOptions
+
+_ESTIMATE = 1  # FIRServerTimestampBehavior.Estimate
 
 if TYPE_CHECKING:
     from .document_snapshot import DocumentSnapshot
@@ -55,6 +59,12 @@ class Query:
     Values are converted with ``to_firestore``, so ``datetime`` and ``None``
     work in filters and cursors.
 
+    Mistakes the SDK would abort the app on raise ``ValueError`` instead: two
+    filters that cannot be combined (two ``not-in``, ``not-in`` with ``in`` or
+    ``!=``...), a limit that is not positive, an order after a start or end
+    point, more cursor values than ordered fields, a cursor document without
+    an ordered field, and ``query_limited_to_last`` without an order.
+
     You get queries from ``CollectionReference``, ``Firestore`` and the
     ``query_*`` methods; you do not make them yourself.
 
@@ -62,8 +72,29 @@ class Query:
         ref: the native ``FIRQuery``.
     """
 
-    def __init__(self, ref: ObjCObject) -> None:
+    # a CollectionReference starts a new query: its state is known (and empty)
+    _fresh: ClassVar[bool] = False
+
+    def __init__(self, ref: ObjCObject, _state: QueryState | None = None) -> None:
         self._ref = ref
+        # what the query holds, for the checks the SDK would abort on; unknown
+        # (no checks) for a query made from a native one
+        self._state = (
+            _state if _state is not None else (EMPTY if self._fresh else UNKNOWN)
+        )
+
+    def _document_cursor(self, document: DocumentSnapshot, start: bool) -> QueryState:
+        self._snapshot_of(document)  # a DocumentSnapshot, or ValueError
+        if not self._state.known:
+            return self._state
+        data = document.data
+        # a pending server timestamp reads as None; estimated, it is a datetime
+        estimated = (
+            document.data_with_server_timestamp_behavior(_ESTIMATE)
+            if document.metadata.has_pending_writes
+            else data
+        )
+        return self._state.with_document_cursor(document.exists, data, estimated, start)
 
     # ---- start and end points ----
 
@@ -92,8 +123,13 @@ class Query:
 
         Raises:
             ValueError: ``document`` is not a ``DocumentSnapshot``.
+            ValueError: the document does not exist, or lacks a field the query
+                orders by (or has a server timestamp not written yet in one).
         """
-        return Query(self._ref.queryStartingAtDocument_(self._snapshot_of(document)))
+        state = self._document_cursor(document, start=True)
+        return Query(
+            self._ref.queryStartingAtDocument_(self._snapshot_of(document)), state
+        )
 
     def query_starting_after_document(self, document: DocumentSnapshot) -> Query:
         """Start the results right after ``document``, for the next page.
@@ -108,8 +144,13 @@ class Query:
 
         Raises:
             ValueError: ``document`` is not a ``DocumentSnapshot``.
+            ValueError: the document does not exist, or lacks a field the query
+                orders by (or has a server timestamp not written yet in one).
         """
-        return Query(self._ref.queryStartingAfterDocument_(self._snapshot_of(document)))
+        state = self._document_cursor(document, start=True)
+        return Query(
+            self._ref.queryStartingAfterDocument_(self._snapshot_of(document)), state
+        )
 
     def query_ending_at_document(self, document: DocumentSnapshot) -> Query:
         """End the results at ``document``, including it.
@@ -124,8 +165,13 @@ class Query:
 
         Raises:
             ValueError: ``document`` is not a ``DocumentSnapshot``.
+            ValueError: the document does not exist, or lacks a field the query
+                orders by (or has a server timestamp not written yet in one).
         """
-        return Query(self._ref.queryEndingAtDocument_(self._snapshot_of(document)))
+        state = self._document_cursor(document, start=False)
+        return Query(
+            self._ref.queryEndingAtDocument_(self._snapshot_of(document)), state
+        )
 
     def query_ending_before_document(self, document: DocumentSnapshot) -> Query:
         """End the results right before ``document``.
@@ -140,8 +186,13 @@ class Query:
 
         Raises:
             ValueError: ``document`` is not a ``DocumentSnapshot``.
+            ValueError: the document does not exist, or lacks a field the query
+                orders by (or has a server timestamp not written yet in one).
         """
-        return Query(self._ref.queryEndingBeforeDocument_(self._snapshot_of(document)))
+        state = self._document_cursor(document, start=False)
+        return Query(
+            self._ref.queryEndingBeforeDocument_(self._snapshot_of(document)), state
+        )
 
     def query_starting_at_values(self, values: Sequence[Any]) -> Query:
         """Start the results at these order-by values, including them.
@@ -156,8 +207,12 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: more values than ``query_ordered_by_field`` calls.
         """
-        return Query(self._ref.queryStartingAtValues_(to_firestore(values)))
+        state = self._state.with_values_cursor(values, start=True)
+        return Query(self._ref.queryStartingAtValues_(to_firestore(values)), state)
 
     def query_starting_after_values(self, values: Sequence[Any]) -> Query:
         """Start the results right after these order-by values.
@@ -168,8 +223,12 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: more values than ``query_ordered_by_field`` calls.
         """
-        return Query(self._ref.queryStartingAfterValues_(to_firestore(values)))
+        state = self._state.with_values_cursor(values, start=True)
+        return Query(self._ref.queryStartingAfterValues_(to_firestore(values)), state)
 
     def query_ending_at_values(self, values: Sequence[Any]) -> Query:
         """End the results at these order-by values, including them.
@@ -180,8 +239,12 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: more values than ``query_ordered_by_field`` calls.
         """
-        return Query(self._ref.queryEndingAtValues_(to_firestore(values)))
+        state = self._state.with_values_cursor(values, start=False)
+        return Query(self._ref.queryEndingAtValues_(to_firestore(values)), state)
 
     def query_ending_before_values(self, values: Sequence[Any]) -> Query:
         """End the results right before these order-by values.
@@ -192,8 +255,12 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: more values than ``query_ordered_by_field`` calls.
         """
-        return Query(self._ref.queryEndingBeforeValues_(to_firestore(values)))
+        state = self._state.with_values_cursor(values, start=False)
+        return Query(self._ref.queryEndingBeforeValues_(to_firestore(values)), state)
 
     # ---- filters ----
 
@@ -211,7 +278,10 @@ class Query:
         Raises:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
-        return Query(self._ref.queryWhereField_isEqualTo_(field, to_firestore(value)))
+        state = self._state.with_filters([("==", field)])
+        return Query(
+            self._ref.queryWhereField_isEqualTo_(field, to_firestore(value)), state
+        )
 
     def query_where_field_is_not_equal_to(self, field: str, value: Any) -> Query:
         """Match documents where ``field != value``.
@@ -228,9 +298,12 @@ class Query:
 
         Raises:
             TypeError: ``value`` holds a value Firestore cannot store.
+            ValueError: the query has a filter this one cannot be combined with
+                (see ``Query``).
         """
+        state = self._state.with_filters([("!=", field)])
         return Query(
-            self._ref.queryWhereField_isNotEqualTo_(field, to_firestore(value))
+            self._ref.queryWhereField_isNotEqualTo_(field, to_firestore(value)), state
         )
 
     def query_where_field_is_less_than(self, field: str, value: Any) -> Query:
@@ -250,7 +323,10 @@ class Query:
         Raises:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
-        return Query(self._ref.queryWhereField_isLessThan_(field, to_firestore(value)))
+        state = self._state.with_filters([("<", field)])
+        return Query(
+            self._ref.queryWhereField_isLessThan_(field, to_firestore(value)), state
+        )
 
     def query_where_field_is_less_than_or_equal_to(
         self, field: str, value: Any
@@ -271,8 +347,10 @@ class Query:
         Raises:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
+        state = self._state.with_filters([("<=", field)])
         return Query(
-            self._ref.queryWhereField_isLessThanOrEqualTo_(field, to_firestore(value))
+            self._ref.queryWhereField_isLessThanOrEqualTo_(field, to_firestore(value)),
+            state,
         )
 
     def query_where_field_is_greater_than(self, field: str, value: Any) -> Query:
@@ -292,8 +370,9 @@ class Query:
         Raises:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
+        state = self._state.with_filters([(">", field)])
         return Query(
-            self._ref.queryWhereField_isGreaterThan_(field, to_firestore(value))
+            self._ref.queryWhereField_isGreaterThan_(field, to_firestore(value)), state
         )
 
     def query_where_field_is_greater_than_or_equal_to(
@@ -315,10 +394,12 @@ class Query:
         Raises:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
+        state = self._state.with_filters([(">=", field)])
         return Query(
             self._ref.queryWhereField_isGreaterThanOrEqualTo_(
                 field, to_firestore(value)
-            )
+            ),
+            state,
         )
 
     def query_where_field_array_contains(self, field: str, value: Any) -> Query:
@@ -335,8 +416,9 @@ class Query:
         Raises:
             TypeError: ``value`` holds a value Firestore cannot store.
         """
+        state = self._state.with_filters([("array-contains", field)])
         return Query(
-            self._ref.queryWhereField_arrayContains_(field, to_firestore(value))
+            self._ref.queryWhereField_arrayContains_(field, to_firestore(value)), state
         )
 
     def query_where_field_array_contains_any(
@@ -357,12 +439,16 @@ class Query:
                 Firestore cannot store.
             ValueError: ``values`` is empty, or has more than 30 values (an
                 empty list would abort the app in the SDK).
+            ValueError: the query has a filter this one cannot be combined with
+                (see ``Query``).
         """
+        state = self._state.with_filters([("array-contains-any", field)])
         return Query(
             self._ref.queryWhereField_arrayContainsAny_(
                 field,
                 filter_values(values, "array-contains-any", MAX_ARRAY_CONTAINS_ANY),
-            )
+            ),
+            state,
         )
 
     def query_where_field_in(self, field: str, values: Sequence[Any]) -> Query:
@@ -381,9 +467,13 @@ class Query:
                 Firestore cannot store.
             ValueError: ``values`` is empty, or has more than 30 values (an
                 empty list would abort the app in the SDK).
+            ValueError: the query has a filter this one cannot be combined with
+                (see ``Query``).
         """
+        state = self._state.with_filters([("in", field)])
         return Query(
-            self._ref.queryWhereField_in_(field, filter_values(values, "in", MAX_IN))
+            self._ref.queryWhereField_in_(field, filter_values(values, "in", MAX_IN)),
+            state,
         )
 
     def query_where_field_not_in(self, field: str, values: Sequence[Any]) -> Query:
@@ -404,11 +494,15 @@ class Query:
                 Firestore cannot store.
             ValueError: ``values`` is empty, or has more than 10 values (an
                 empty list would abort the app in the SDK).
+            ValueError: the query has a filter this one cannot be combined with
+                (see ``Query``).
         """
+        state = self._state.with_filters([("not-in", field)])
         return Query(
             self._ref.queryWhereField_notIn_(
                 field, filter_values(values, "not-in", MAX_NOT_IN)
-            )
+            ),
+            state,
         )
 
     def query_where_filter(self, filter_: Filter) -> Query:
@@ -420,8 +514,13 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: the query has a filter this one cannot be combined with
+                (see ``Query``).
         """
-        return Query(self._ref.queryWhereFilter_(filter_._filter))
+        state = self._state.with_filters(filter_._parts)
+        return Query(self._ref.queryWhereFilter_(filter_._filter), state)
 
     # ---- order and limit ----
 
@@ -433,8 +532,14 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: ``limit`` is not 1 to 2,147,483,647.
+            TypeError: ``limit`` is not an ``int``.
         """
-        return Query(self._ref.queryLimitedTo_(limit))
+        check_limit(limit)
+        state = replace(self._state, limit_to_last=False)
+        return Query(self._ref.queryLimitedTo_(limit), state)
 
     def query_limited_to_last(self, limit: int) -> Query:
         """Return at most ``limit`` documents, from the end of the order.
@@ -447,8 +552,14 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: ``limit`` is not 1 to 2,147,483,647.
+            TypeError: ``limit`` is not an ``int``.
         """
-        return Query(self._ref.queryLimitedToLast_(limit))
+        check_limit(limit)
+        state = replace(self._state, limit_to_last=True)
+        return Query(self._ref.queryLimitedToLast_(limit), state)
 
     def query_ordered_by_field(self, field: str, descending: bool = False) -> Query:
         """Order the results by ``field``.
@@ -463,10 +574,14 @@ class Query:
 
         Returns:
             A new ``Query``; this one is unchanged.
+
+        Raises:
+            ValueError: the query already has a start or an end point (order first).
         """
+        state = self._state.with_order(field)
         if descending:
-            return Query(self._ref.queryOrderedByField_descending_(field, True))
-        return Query(self._ref.queryOrderedByField_(field))
+            return Query(self._ref.queryOrderedByField_descending_(field, True), state)
+        return Query(self._ref.queryOrderedByField_(field), state)
 
     # ---- aggregates ----
 
@@ -505,7 +620,11 @@ class Query:
         Args:
             callback: gets ``(QuerySnapshot, None)`` or ``(None, error)``.
             source: ``FIRFirestoreSource.Default`` (default) / ``Server`` / ``Cache``.
+
+        Raises:
+            ValueError: the query has ``query_limited_to_last`` but no order.
         """
+        self._state.check_runnable()
         block = one_shot_block(_snapshot_handler(callback), objc_id, objc_id)
         if source is None:
             self._ref.getDocumentsWithCompletion_(block)
@@ -530,7 +649,11 @@ class Query:
 
         Returns:
             A ``ListenerRegistration``. Call ``.remove()`` to stop listening.
+
+        Raises:
+            ValueError: the query has ``query_limited_to_last`` but no order.
         """
+        self._state.check_runnable()
         block, release = listener_block(_snapshot_handler(callback), objc_id, objc_id)
         if options is not None:
             registration = self._ref.addSnapshotListenerWithOptions_listener_(

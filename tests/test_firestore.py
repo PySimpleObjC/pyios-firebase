@@ -319,3 +319,206 @@ def test_filter_lists_are_checked_too(monkeypatch, method, selector, limit):
     with pytest.raises(TypeError):
         getattr(Filter, method)("country", "USA")
     assert len(fake.calls) == 1
+
+
+# ---- query checks the SDK would abort the app on -----------------------------------
+
+
+class FakeQueryNative(Recorder):
+    """A native FIRQuery: records calls, and every query... call returns itself."""
+
+    def __getattr__(self, name):
+        method = super().__getattr__(name)
+        if not name.startswith("query"):
+            return method
+
+        def query_method(*args):
+            method(*args)
+            return self
+
+        return query_method
+
+
+def cities():
+    from pyios_firebase.firestore import CollectionReference
+
+    return CollectionReference(FakeQueryNative())
+
+
+class FakeDocumentSnapshot(DocumentSnapshot):
+    """A DocumentSnapshot with the data a cursor reads."""
+
+    def __init__(self, data, exists=True, estimated=None, pending=False):
+        self._snapshot = object()  # what _snapshot_of checks
+        self._data, self._exists = data, exists
+        self._estimated = estimated if estimated is not None else data
+        self._pending = pending
+
+    @property
+    def exists(self):
+        return self._exists
+
+    @property
+    def data(self):
+        return self._data
+
+    def data_with_server_timestamp_behavior(self, behavior):
+        return self._estimated
+
+    @property
+    def metadata(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(has_pending_writes=self._pending)
+
+
+@pytest.mark.parametrize(
+    ("build", "message"),
+    [
+        (
+            lambda q: q.query_where_field_not_in("a", [1]).query_where_field_not_in(
+                "b", [2]
+            ),
+            "more than one 'not-in'",
+        ),
+        (
+            lambda q: q.query_where_field_in("a", [1]).query_where_field_not_in(
+                "b", [2]
+            ),
+            "combine 'not-in' and 'in'",
+        ),
+        (
+            lambda q: q.query_where_field_not_in(
+                "a", [1]
+            ).query_where_field_array_contains_any("b", [2]),
+            "combine 'array-contains-any' and 'not-in'",
+        ),
+        (
+            lambda q: q.query_where_field_is_not_equal_to(
+                "a", 1
+            ).query_where_field_not_in("b", [2]),
+            "combine 'not-in' and '!='",
+        ),
+        (
+            lambda q: q.query_where_field_is_not_equal_to(
+                "a", 1
+            ).query_where_field_is_not_equal_to("b", 2),
+            "more than one '!='",
+        ),
+        (lambda q: q.query_limited_to(0), "1 to 2,147,483,647"),
+        (lambda q: q.query_limited_to_last(2**31), "1 to 2,147,483,647"),
+        (
+            lambda q: (
+                q.query_ordered_by_field("a")
+                .query_starting_at_values([1])
+                .query_ordered_by_field("b")
+            ),
+            "order the query before giving it a start point",
+        ),
+        (
+            lambda q: (
+                q.query_ordered_by_field("a")
+                .query_ending_before_values([1])
+                .query_ordered_by_field("b")
+            ),
+            "before giving it an end point",
+        ),
+        (
+            lambda q: q.query_starting_at_values([1]),
+            "one value per ordered field: 1 values for 0",
+        ),
+        (
+            lambda q: q.query_ordered_by_field("a").query_ending_at_values([1, 2]),
+            "2 values for 1",
+        ),
+    ],
+)
+def test_query_mistakes_raise_instead_of_aborting(build, message):
+    with pytest.raises(ValueError, match=message):
+        build(cities())
+
+
+def test_conflicts_inside_composite_filters_are_found(monkeypatch):
+    from pyios_firebase.firestore import Filter
+
+    monkeypatch.setattr(
+        "pyios_firebase.firestore.filter._fir_filter", lambda: FakeQueryNative()
+    )
+    either = Filter.or_filter_with_filters(
+        [
+            Filter.filter_where_field_not_in("a", [1]),
+            Filter.filter_where_field_is_equal_to("b", 2),
+        ]
+    )
+    assert [op for op, _ in either._parts] == ["not-in", "=="]
+    with pytest.raises(ValueError, match="combine 'not-in' and 'in'"):
+        cities().query_where_field_in("c", [3]).query_where_filter(either)
+    with pytest.raises(ValueError, match="more than one 'not-in'"):
+        cities().query_where_filter(
+            Filter.and_filter_with_filters(
+                [either, Filter.filter_where_field_not_in("d", [4])]
+            )
+        )
+
+
+def test_what_the_sdk_allows_still_works():
+    q = cities()
+    q.query_where_field_in("a", [1]).query_where_field_in("b", [2])  # two "in"
+    q.query_where_field_array_contains_any("a", [1]).query_where_field_in("b", [2])
+    q.query_where_field_is_less_than("a", 1).query_where_field_is_greater_than("b", 2)
+    q.query_ordered_by_field("a").query_ordered_by_field("b").query_starting_at_values(
+        [1, 2]
+    )
+    q.query_ordered_by_field("a").query_starting_after_values(
+        [1]
+    ).query_ending_before_values([5])
+    q.query_limited_to(1).query_limited_to_last(2_147_483_647)
+
+
+def test_limit_to_last_needs_an_order_when_it_runs(blocks):
+    with pytest.raises(ValueError, match="needs a query_ordered_by_field"):
+        cities().query_limited_to_last(3).get_documents(lambda s, e: None)
+    with pytest.raises(ValueError, match="needs a query_ordered_by_field"):
+        cities().query_limited_to_last(3).add_snapshot_listener(lambda s, e: None)
+    assert not blocks  # nothing was started
+    q = (
+        cities().query_limited_to_last(3).query_ordered_by_field("a")
+    )  # order after: fine
+    q.get_documents(lambda s, e: None)
+    cities().query_limited_to_last(3).query_limited_to(3).get_documents(
+        lambda s, e: None
+    )
+    blocks.clear()
+
+
+def test_document_cursors_check_the_document():
+    ordered = cities().query_ordered_by_field("population")
+    ordered.query_starting_after_document(FakeDocumentSnapshot({"population": 10}))
+    with pytest.raises(ValueError, match="does not exist"):
+        ordered.query_starting_at_document(FakeDocumentSnapshot({}, exists=False))
+    with pytest.raises(ValueError, match="no 'population' field"):
+        ordered.query_ending_at_document(FakeDocumentSnapshot({"name": "x"}))
+    with pytest.raises(ValueError, match="server timestamp not written yet"):
+        cities().query_ordered_by_field("updated").query_starting_after_document(
+            FakeDocumentSnapshot(
+                {"updated": None}, estimated={"updated": 1}, pending=True
+            )
+        )
+    # an inequality filter's field is ordered too (the SDK's normalized order)
+    with pytest.raises(ValueError, match="no 'age' field"):
+        cities().query_where_field_is_greater_than(
+            "age", 3
+        ).query_starting_after_document(FakeDocumentSnapshot({"name": "x"}))
+    nested = cities().query_ordered_by_field("stats.score")
+    nested.query_starting_after_document(
+        FakeDocumentSnapshot({"stats": {"score": None}})
+    )
+
+
+def test_queries_from_native_ones_are_not_checked():
+    # QuerySnapshot.query has no history: nothing must be refused there
+    q = Query(FakeQueryNative())
+    q.query_starting_at_values([1, 2, 3]).query_ordered_by_field("a")
+    q.query_where_field_not_in("a", [1]).query_where_field_not_in("b", [2])
+    with pytest.raises(ValueError):
+        q.query_limited_to(0)  # a bad limit is bad everywhere
