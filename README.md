@@ -12,6 +12,8 @@ Firebase iOS SDK, for example:
 db.collection_with_path("cities").document_with_path("SF")
 ```
 
+**Documentation: <https://pysimpleobjc.github.io/pyios-firebase/>**
+
 > **Replaces [pyobjus-firebase](https://github.com/PySimpleObjC/pyobjus-firebase),
 > which is now archived.**
 
