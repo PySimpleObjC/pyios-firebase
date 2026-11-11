@@ -222,7 +222,9 @@ def test_any_mapping_can_be_written():
     from types import MappingProxyType
 
     defaults = {"theme": "dark", "at": WHEN}
-    value = ChainMap({"theme": "light"}, {"nested": MappingProxyType(defaults)}, defaults)
+    value = ChainMap(
+        {"theme": "light"}, {"nested": MappingProxyType(defaults)}, defaults
+    )
     assert round_trip(value) == {"theme": "light", "nested": defaults, "at": WHEN}
     assert round_trip(MappingProxyType(defaults)) == defaults
     with pytest.raises(TypeError, match="field names must be str"):
