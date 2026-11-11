@@ -61,7 +61,9 @@ def sdk(monkeypatch):
     class SharedPerformance:
         isDataCollectionEnabled = staticmethod(lambda: state["enabled"])
         isInstrumentationEnabled = True
-        calls = []
+
+        def __init__(self):
+            self.calls = []
 
         def traceWithName_(self, name):
             self.calls.append(name)
