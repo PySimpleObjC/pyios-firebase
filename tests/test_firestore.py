@@ -405,8 +405,8 @@ class FakeDocumentSnapshot(DocumentSnapshot):
             ).query_where_field_is_not_equal_to("b", 2),
             "more than one '!='",
         ),
-        (lambda q: q.query_limited_to(0), "1 to 2,147,483,647"),
-        (lambda q: q.query_limited_to_last(2**31), "1 to 2,147,483,647"),
+        (lambda q: q.query_limited_to(0), "at least 1, not 0"),
+        (lambda q: q.query_limited_to_last(-5), "at least 1, not -5"),
         (
             lambda q: (
                 q.query_ordered_by_field("a")
@@ -513,6 +513,20 @@ def test_document_cursors_check_the_document():
     nested.query_starting_after_document(
         FakeDocumentSnapshot({"stats": {"score": None}})
     )
+
+
+def test_huge_limits_mean_no_limit_as_in_the_sdk(blocks):
+    # the SDK saturates limits >= INT32_MAX to "no limit" (SaturatedLimitValue)
+    for huge in (2**31 - 1, 3_000_000_000, 2**80):
+        native = FakeQueryNative()
+        from pyios_firebase.firestore import CollectionReference
+
+        CollectionReference(native).query_limited_to(huge)
+        assert native.calls[-1] == ("queryLimitedTo_", (2**31 - 1,))  # fits NSInteger
+    # a "no limit" limit_to_last needs no order, as in the SDK
+    cities().query_limited_to_last(2**31 - 1).get_documents(lambda s, e: None)
+    cities().query_limited_to_last(2**40).add_snapshot_listener(lambda s, e: None)
+    blocks.clear()
 
 
 def test_queries_from_native_ones_are_not_checked():

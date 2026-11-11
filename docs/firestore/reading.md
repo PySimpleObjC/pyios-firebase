@@ -211,7 +211,7 @@ pyios-firebase makes the same checks first and raises `ValueError` (or
 | Two `not-in` filters, or `not-in` with `in`, `array-contains-any` or `!=` (in the query, or inside an OR / AND `Filter`) | The filter call |
 | Two `!=` filters | The filter call |
 | An empty `in` / `not-in` / `array-contains-any` list, or a `str` instead of a list | The filter call |
-| A limit that is not 1 to 2,147,483,647 | `query_limited_to`, `query_limited_to_last` |
+| A limit below 1 (2,147,483,647 or more means no limit, as in the SDK) | `query_limited_to`, `query_limited_to_last` |
 | `query_ordered_by_field` after a start or end point | `query_ordered_by_field` |
 | More cursor values than `query_ordered_by_field` calls | `query_*_values` |
 | A cursor document that does not exist, lacks an ordered field, or has a server timestamp not written yet in it | `query_*_document` |

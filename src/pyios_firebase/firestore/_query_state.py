@@ -6,7 +6,7 @@ checks run first and raise a ``ValueError`` instead, with the SDK's own rules
 (``firestore/core/src/api/query_core.cc`` and ``FIRQuery.mm``, SDK 13):
 
 - operators that cannot be combined (two ``not-in``, ``not-in`` with ``in``...)
-- a limit that is not positive
+- a limit below 1
 - an order added after a start or end point
 - ``limit_to_last`` without an order, when the query runs
 - more cursor values than ordered fields
@@ -29,7 +29,8 @@ Part = tuple[str, str]
 
 INEQUALITY: Final = frozenset({"<", "<=", ">", ">=", "!=", "not-in"})
 DOCUMENT_ID: Final = "__name__"
-_INT32_MAX: Final = 2**31 - 1
+NO_LIMIT: Final = 2**31 - 1
+"""The SDK's ``kNoLimit``: a limit at or above it means "no limit"."""
 
 # operator -> the operators a query must not already have (ConflictingOps)
 _CONFLICTS: Final[Mapping[str, frozenset[str]]] = {
@@ -41,23 +42,28 @@ _CONFLICTS: Final[Mapping[str, frozenset[str]]] = {
 
 
 def check_limit(limit: int) -> int:
-    """A query limit, as the SDK takes it (a positive 32-bit integer).
+    """A query limit, as the SDK takes it.
+
+    The SDK raises (aborting the app) only for a limit below 1. A limit at or
+    above ``NO_LIMIT`` means "no limit" to it (``SaturatedLimitValue``), so it
+    is passed as ``NO_LIMIT``: an ``int`` too big for ``NSInteger`` would fail
+    in Rubicon otherwise.
 
     Args:
         limit: the limit.
 
     Returns:
-        The limit.
+        The limit to give the SDK: ``limit``, or at most ``NO_LIMIT``.
 
     Raises:
         TypeError: not an ``int`` (a ``bool`` neither).
-        ValueError: not 1 to 2,147,483,647.
+        ValueError: below 1.
     """
     if isinstance(limit, bool) or not isinstance(limit, int):
         raise TypeError(f"a query limit is an int, not {type(limit).__name__}")
-    if not 0 < limit <= _INT32_MAX:
-        raise ValueError(f"a query limit must be 1 to {_INT32_MAX:,}, not {limit}")
-    return limit
+    if limit < 1:
+        raise ValueError(f"a query limit must be at least 1, not {limit}")
+    return min(limit, NO_LIMIT)
 
 
 @dataclass(frozen=True)

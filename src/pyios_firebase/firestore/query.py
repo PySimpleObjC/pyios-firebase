@@ -20,7 +20,7 @@ from ..util import (
 )
 from . import query_snapshot  # module import: query_snapshot imports us back
 from ._limits import MAX_ARRAY_CONTAINS_ANY, MAX_IN, MAX_NOT_IN, filter_values
-from ._query_state import EMPTY, UNKNOWN, QueryState, check_limit
+from ._query_state import EMPTY, NO_LIMIT, UNKNOWN, QueryState, check_limit
 from .aggregate import AggregateField, AggregateQuery
 from .listener_registration import ListenerRegistration, SnapshotListenOptions
 
@@ -61,7 +61,7 @@ class Query:
 
     Mistakes the SDK would abort the app on raise ``ValueError`` instead: two
     filters that cannot be combined (two ``not-in``, ``not-in`` with ``in`` or
-    ``!=``...), a limit that is not positive, an order after a start or end
+    ``!=``...), a limit below 1, an order after a start or end
     point, more cursor values than ordered fields, a cursor document without
     an ordered field, and ``query_limited_to_last`` without an order.
 
@@ -534,10 +534,11 @@ class Query:
             A new ``Query``; this one is unchanged.
 
         Raises:
-            ValueError: ``limit`` is not 1 to 2,147,483,647.
+            ValueError: ``limit`` is below 1. (2,147,483,647 or more means no
+                limit, as in the SDK.)
             TypeError: ``limit`` is not an ``int``.
         """
-        check_limit(limit)
+        limit = check_limit(limit)
         state = replace(self._state, limit_to_last=False)
         return Query(self._ref.queryLimitedTo_(limit), state)
 
@@ -554,11 +555,13 @@ class Query:
             A new ``Query``; this one is unchanged.
 
         Raises:
-            ValueError: ``limit`` is not 1 to 2,147,483,647.
+            ValueError: ``limit`` is below 1. (2,147,483,647 or more means no
+                limit, as in the SDK.)
             TypeError: ``limit`` is not an ``int``.
         """
-        check_limit(limit)
-        state = replace(self._state, limit_to_last=True)
+        limit = check_limit(limit)
+        # "no limit" (the SDK's kNoLimit) is not a limit to last: no order needed
+        state = replace(self._state, limit_to_last=limit < NO_LIMIT)
         return Query(self._ref.queryLimitedToLast_(limit), state)
 
     def query_ordered_by_field(self, field: str, descending: bool = False) -> Query:
