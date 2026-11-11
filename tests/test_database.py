@@ -306,6 +306,26 @@ def test_writes(blocks):
     blocks.clear()
 
 
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"posts/p1": {"t": 1}, "posts/p1/updated_at": 2},
+        {"a": 1, "/a": 2},
+        {"a": 1, "a/": 2},
+        {"/": {"a": 1}, "b": 2},
+    ],
+)
+def test_update_paths_cannot_overlap(values, blocks):
+    native = FakeRef()
+    with pytest.raises(ValueError, match="at or below"):
+        DatabaseReference(native).update_child_values(values)
+    with pytest.raises(ValueError, match="at or below"):
+        DatabaseReference(native).on_disconnect().update_child_values(values)
+    assert not native.calls
+    DatabaseReference(native).update_child_values({"posts/p1": 1, "posts/p10": 2})
+    blocks.clear()
+
+
 def test_writes_under_info_raise():
     ref = DatabaseReference(FakeRef("http://h/.info/connected?ns=x"))
     for write in (

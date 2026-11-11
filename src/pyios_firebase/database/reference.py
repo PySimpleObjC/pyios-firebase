@@ -13,6 +13,7 @@ __all__ = (
 
 from collections.abc import Callable, Mapping
 from ctypes import c_bool
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import unquote, urlsplit
 
@@ -57,6 +58,14 @@ def _child_values(values: Mapping[str, Any]) -> Any:
     for path, value in values.items():
         validate_path(path, "update path")
         checked[path] = value
+    # the SDK aborts the app when one path is at or below another
+    parts = sorted(tuple(part for part in path.split("/") if part) for path in checked)
+    for previous, current in pairwise(parts):
+        if current[: len(previous)] == previous:
+            raise ValueError(
+                f"update path {'/'.join(current)!r} is at or below "
+                f"{'/'.join(previous) or '/'!r}: write it inside that value instead"
+            )
     native = objc_class("NSMutableDictionary").dictionary()
     for path, value in checked.items():
         native.setObject_forKey_(to_database(value), path)
@@ -291,7 +300,8 @@ class DatabaseReference(DatabaseQuery):
 
         Raises:
             TypeError: a value the database cannot store.
-            ValueError: an invalid path or value, or a location under ``.info``.
+            ValueError: an invalid path or value, a path at or below another
+                one, or a location under ``.info``.
         """
         self._check_writable()
         self._native.updateChildValues_withCompletionBlock_(
