@@ -18,6 +18,7 @@ from ..util import (
     to_firestore,
 )
 from . import query_snapshot  # module import: query_snapshot imports us back
+from ._limits import MAX_ARRAY_CONTAINS_ANY, MAX_IN, MAX_NOT_IN, filter_values
 from .aggregate import AggregateField, AggregateQuery
 from .listener_registration import ListenerRegistration, SnapshotListenOptions
 
@@ -352,10 +353,16 @@ class Query:
             A new ``Query``; this one is unchanged.
 
         Raises:
-            TypeError: ``values`` holds a value Firestore cannot store.
+            TypeError: ``values`` is not a list or tuple, or holds a value
+                Firestore cannot store.
+            ValueError: ``values`` is empty, or has more than 30 values (an
+                empty list would abort the app in the SDK).
         """
         return Query(
-            self._ref.queryWhereField_arrayContainsAny_(field, to_firestore(values))
+            self._ref.queryWhereField_arrayContainsAny_(
+                field,
+                filter_values(values, "array-contains-any", MAX_ARRAY_CONTAINS_ANY),
+            )
         )
 
     def query_where_field_in(self, field: str, values: Sequence[Any]) -> Query:
@@ -370,9 +377,14 @@ class Query:
             A new ``Query``; this one is unchanged.
 
         Raises:
-            TypeError: ``values`` holds a value Firestore cannot store.
+            TypeError: ``values`` is not a list or tuple, or holds a value
+                Firestore cannot store.
+            ValueError: ``values`` is empty, or has more than 30 values (an
+                empty list would abort the app in the SDK).
         """
-        return Query(self._ref.queryWhereField_in_(field, to_firestore(values)))
+        return Query(
+            self._ref.queryWhereField_in_(field, filter_values(values, "in", MAX_IN))
+        )
 
     def query_where_field_not_in(self, field: str, values: Sequence[Any]) -> Query:
         """Match documents where ``field`` is none of ``values``.
@@ -388,9 +400,16 @@ class Query:
             A new ``Query``; this one is unchanged.
 
         Raises:
-            TypeError: ``values`` holds a value Firestore cannot store.
+            TypeError: ``values`` is not a list or tuple, or holds a value
+                Firestore cannot store.
+            ValueError: ``values`` is empty, or has more than 10 values (an
+                empty list would abort the app in the SDK).
         """
-        return Query(self._ref.queryWhereField_notIn_(field, to_firestore(values)))
+        return Query(
+            self._ref.queryWhereField_notIn_(
+                field, filter_values(values, "not-in", MAX_NOT_IN)
+            )
+        )
 
     def query_where_filter(self, filter_: Filter) -> Query:
         """Filter with a ``Filter``, for OR conditions and nested AND/OR.

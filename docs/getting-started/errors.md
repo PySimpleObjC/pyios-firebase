@@ -85,7 +85,7 @@ exception instead:
 
 | Product | Raises | For example |
 |---|---|---|
-| Firestore | `TypeError` | A value Firestore cannot store (a `set`, a `date` without a time, a non-`str` key) |
+| Firestore | `TypeError`, `ValueError` | A value Firestore cannot store (a `set`, a `date` without a time, a non-`str` key); an empty `in` / `not-in` / `array-contains-any` list, or one with too many values |
 | Realtime Database | `ValueError`, `TypeError` | A key with `. # $ [ ] /`, `nan`, a `datetime`, ordering a query twice, a limit of 0, update paths inside each other |
 | Cloud Functions | `TypeError` | Data JSON cannot carry: a `datetime`, a `set`, `nan`, `inf` |
 | Analytics | `ValueError`, `TypeError` | A reserved or invalid event name, a `bool` parameter, more than 25 parameters |

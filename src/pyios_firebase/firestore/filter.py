@@ -11,6 +11,7 @@ from rubicon.objc import ObjCClass
 
 from ..types import ObjCObject
 from ..util import objc_class, to_firestore
+from ._limits import MAX_ARRAY_CONTAINS_ANY, MAX_IN, MAX_NOT_IN, filter_values
 
 
 def _fir_filter() -> ObjCClass:
@@ -208,11 +209,15 @@ class Filter:
             A ``Filter`` for ``Query.query_where_filter``.
 
         Raises:
-            TypeError: ``values`` holds a value Firestore cannot store.
+            TypeError: ``values`` is not a list or tuple, or holds a value
+                Firestore cannot store.
+            ValueError: ``values`` is empty, or has more than 30 values (an
+                empty list would abort the app in the SDK).
         """
         return Filter(
             _fir_filter().filterWhereField_arrayContainsAny_(
-                field, to_firestore(values)
+                field,
+                filter_values(values, "array-contains-any", MAX_ARRAY_CONTAINS_ANY),
             )
         )
 
@@ -229,9 +234,16 @@ class Filter:
             A ``Filter`` for ``Query.query_where_filter``.
 
         Raises:
-            TypeError: ``values`` holds a value Firestore cannot store.
+            TypeError: ``values`` is not a list or tuple, or holds a value
+                Firestore cannot store.
+            ValueError: ``values`` is empty, or has more than 30 values (an
+                empty list would abort the app in the SDK).
         """
-        return Filter(_fir_filter().filterWhereField_in_(field, to_firestore(values)))
+        return Filter(
+            _fir_filter().filterWhereField_in_(
+                field, filter_values(values, "in", MAX_IN)
+            )
+        )
 
     @staticmethod
     def filter_where_field_not_in(field: str, values: Sequence[Any]) -> Filter:
@@ -248,10 +260,15 @@ class Filter:
             A ``Filter`` for ``Query.query_where_filter``.
 
         Raises:
-            TypeError: ``values`` holds a value Firestore cannot store.
+            TypeError: ``values`` is not a list or tuple, or holds a value
+                Firestore cannot store.
+            ValueError: ``values`` is empty, or has more than 10 values (an
+                empty list would abort the app in the SDK).
         """
         return Filter(
-            _fir_filter().filterWhereField_notIn_(field, to_firestore(values))
+            _fir_filter().filterWhereField_notIn_(
+                field, filter_values(values, "not-in", MAX_NOT_IN)
+            )
         )
 
     # ---- combine filters ----
