@@ -7,6 +7,11 @@ import pytest
     "module",
     [
         "pyios_firebase",
+        "pyios_firebase.auth",
+        "pyios_firebase.auth.apple",
+        "pyios_firebase.auth.facebook",
+        "pyios_firebase.auth.google",
+        "pyios_firebase.auth.multi_factor",
         "pyios_firebase.core",
         "pyios_firebase.firestore",
         "pyios_firebase.types",

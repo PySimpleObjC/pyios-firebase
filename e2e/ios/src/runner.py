@@ -17,6 +17,7 @@ from typing import Any
 from kivy.clock import Clock
 
 TIMEOUT_SECONDS = 20
+SKIP = "SKIP: "  # a finish message starting with this is a skip, not a failure
 
 
 class Failure(Exception):
@@ -52,6 +53,10 @@ class TestContext:
     def passed(self) -> None:
         self._finish(None)
 
+    def skipped(self, reason: str) -> None:
+        """The test cannot run here (for example the emulator lacks a feature)."""
+        self._finish(SKIP + reason)
+
     def fail(self, message: str) -> None:
         self._finish(message)
 
@@ -76,11 +81,13 @@ class Runner:
 
     def _next(self) -> None:
         if not self._tests:
-            passed = sum(r["ok"] for r in self._results)
+            passed = sum(r["ok"] and not r["skipped"] for r in self._results)
+            skipped = sum(r["skipped"] for r in self._results)
             self._on_finish(
                 {
                     "passed": passed,
-                    "failed": len(self._results) - passed,
+                    "skipped": skipped,
+                    "failed": len(self._results) - passed - skipped,
                     "seconds": round(time.monotonic() - self._started, 2),
                     "results": self._results,
                 }
@@ -94,15 +101,18 @@ class Runner:
                 return  # a late callback after a timeout or a failure
             state["done"] = True
             timeout.cancel()
+            skipped = error is not None and error.startswith(SKIP)
             result = {
                 "name": name,
-                "ok": error is None,
-                "detail": error or "",
+                "ok": error is None or skipped,
+                "skipped": skipped,
+                "detail": (error or "").removeprefix(SKIP),
                 "seconds": round(time.monotonic() - state["start"], 3),
             }
             self._results.append(result)
-            line = f"PYIOS-E2E {'PASS' if error is None else 'FAIL'} {name} ({result['seconds']}s)"
-            print(line + (f"\n{error}" if error else ""), flush=True)
+            status = "SKIP" if skipped else ("PASS" if error is None else "FAIL")
+            line = f"PYIOS-E2E {status} {name} ({result['seconds']}s)"
+            print(line + (f"\n{result['detail']}" if error else ""), flush=True)
             self._on_progress(line)
             Clock.schedule_once(lambda dt: self._next(), 0)
 

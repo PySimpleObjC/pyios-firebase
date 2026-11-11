@@ -4,12 +4,12 @@ One subpackage per Firebase product. Import only the ones you use: each one
 needs its Firebase framework in the app.
 
 - ``pyios_firebase.core``: ``configure()``
+- ``pyios_firebase.auth``: Firebase Authentication
 - ``pyios_firebase.firestore``: Cloud Firestore
 - ``pyios_firebase.types``: types for your own annotations
 
-App Check, Auth and Google Sign-In are still the 0.1 modules
-(``firappcheck``, ``firuser``, ``firgoogleauth``) until they move to
-their own subpackages.
+App Check is still the 0.1 module ``firappcheck`` until it moves to its
+own subpackage.
 """
 
 from .core import configure

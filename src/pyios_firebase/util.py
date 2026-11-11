@@ -18,6 +18,7 @@ __all__ = (
     "datetime_to_timestamp",
     "error_from_pointer",
     "listener_block",
+    "nsdate_to_datetime",
     "nserror_to_dict",
     "objc_class",
     "objc_instance",
@@ -200,6 +201,28 @@ def timestamp_to_datetime(ts: Any) -> datetime:
     )
 
 
+def nsdate_to_datetime(value: ObjCObject | None) -> datetime | None:
+    """Turn an ``NSDate`` into an aware ``datetime`` in UTC.
+
+    Args:
+        value: the ``NSDate``, or ``None``.
+
+    Returns:
+        The same instant with ``tzinfo=UTC`` (to the microsecond), or ``None``.
+    """
+    if value is None:
+        return None
+    # a property in Apple's headers, but Rubicon exposes it as a method
+    interval: ObjCObject = value.timeIntervalSince1970
+    if callable(interval):
+        interval = interval()
+    seconds = float(interval)
+    whole = int(seconds // 1)
+    return _EPOCH + timedelta(
+        seconds=whole, microseconds=round((seconds - whole) * 1_000_000)
+    )
+
+
 def datetime_to_timestamp(value: datetime) -> ObjCObject:
     """Turn a ``datetime`` into a ``FIRTimestamp``, to the microsecond.
 
@@ -313,7 +336,7 @@ def to_python(value: Any) -> Any:
     - ``NSString`` becomes ``str``, ``NSData`` becomes ``bytes``
     - ``NSNumber`` becomes ``bool``, ``int`` or ``float`` (booleans stay ``bool``)
     - ``NSNull`` becomes ``None``
-    - ``FIRTimestamp`` becomes an aware ``datetime`` (UTC)
+    - ``NSDate`` and ``FIRTimestamp`` become an aware ``datetime`` (UTC)
     - ``FIRDocumentReference`` becomes a ``DocumentReference``
     - anything else that is still Objective-C (for example ``FIRGeoPoint``) is
       left as it is
@@ -349,6 +372,8 @@ def to_python(value: Any) -> Any:
         return py_from_ns(value)
     if value.isKindOfClass(objc_class("NSNull")):
         return None
+    if value.isKindOfClass(objc_class("NSDate")):
+        return nsdate_to_datetime(value)
     # optional: Functions results come through here too, in apps that may not
     # link FirebaseFirestore
     timestamp_class = _optional_class("FIRTimestamp")

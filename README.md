@@ -27,12 +27,13 @@ db.collection_with_path("cities").document_with_path("SF")
 6. [Type hints](#type-hints)
 7. [How callbacks work](#how-callbacks-work)
 8. [Cloud Firestore](#cloud-firestore)
-9. [API reference](#api-reference)
-10. [Good to know](#good-to-know)
-11. [Troubleshooting](#troubleshooting)
-12. [Migrating](#migrating)
-13. [Development](#development)
-14. [Licenses](#licenses)
+9. [Authentication](#authentication)
+10. [API reference](#api-reference)
+11. [Good to know](#good-to-know)
+12. [Troubleshooting](#troubleshooting)
+13. [Migrating](#migrating)
+14. [Development](#development)
+15. [Licenses](#licenses)
 
 ---
 
@@ -50,9 +51,20 @@ db.collection_with_path("cities").document_with_path("SF")
   - Field values: delete, server timestamp, array union, array remove, increment
   - Plain Python values in and out, including `datetime`, `None` and nested data
   - The local Firestore emulator, for development and tests
-- **App Check** debug provider and **Google Sign-In**: still the 0.1 modules
-  (`firappcheck`, `firgoogleauth`, `firuser`); they move to their own
-  subpackages in a later release
+- **Authentication**
+  - Email and password, email link (passwordless), anonymous, custom token, phone
+  - Google, Apple and Facebook Login; Microsoft, Yahoo, GitHub, Twitter, OIDC and
+    SAML web flows; Game Center
+  - Multi-factor: SMS and TOTP (authenticator app) second factors
+  - Shared keychain (cross-app sign-in), passing state in email actions
+  - Sign-in state and ID token listeners
+  - ID tokens and custom claims, for your backend
+  - Profile and account changes, email verification, password reset, action codes
+  - Linking and unlinking providers, re-authentication, anonymous upgrade
+  - Typed errors (`AuthError`, `AuthErrorCode`)
+  - The local Auth emulator, for development and tests
+- **App Check** debug provider: still the 0.1 module `firappcheck`; it moves to
+  its own subpackage in a later release
 - Pure Python. No `.m` or `.h` files.
 - Callback blocks are kept alive for you, so they are not deleted too early.
 - Each product is its own subpackage. You only need the Firebase frameworks of
@@ -74,7 +86,7 @@ db.collection_with_path("cities").document_with_path("SF")
   | `core` | `FirebaseCore` (always) |
   | `firestore` | `FirebaseFirestore` |
   | `firappcheck` | `FirebaseAppCheck` |
-  | `firuser`, `firgoogleauth` | `FirebaseAuth` (+ `GoogleSignIn` for `firgoogleauth`) |
+  | `auth` | `FirebaseAuth` (+ `GoogleSignIn` for `auth.google`) |
 
 - A `GoogleService-Info.plist` file from your Firebase project, added to the app
 
@@ -105,19 +117,21 @@ pyios_firebase/
 ├── firestore/           Firestore, CollectionReference, DocumentReference,
 │                        DocumentSnapshot, Query, QuerySnapshot, WriteBatch,
 │                        Transaction, FieldValue, Filter, aggregates, enums
-├── firappcheck.py       initialize_debug_appcheck()          (0.1 module)
-├── firuser.py           User                                 (0.1 module)
-└── firgoogleauth.py     start_google_sign_in()               (0.1 module)
+├── auth/                Auth, User, credentials and providers, AuthError
+│   ├── google.py        start_google_sign_in(), get_google_credential()
+│   └── apple.py         start_apple_sign_in(), get_apple_credential()
+└── firappcheck.py       initialize_debug_appcheck()          (0.1 module)
 ```
 
 Import from the subpackage:
 
 ```python
 from pyios_firebase import core
+from pyios_firebase.auth import Auth
 from pyios_firebase.firestore import Firestore, FieldValue, Filter
 ```
 
-In `core` and `firestore`, Objective-C classes are looked up the first time
+In `core`, `auth` and `firestore`, Objective-C classes are looked up the first time
 they are used, not on import.
 
 ---
@@ -197,9 +211,9 @@ URL to Google Sign-In like this:
 
 ```python
 from kivy.core.window import Window
-from pyios_firebase import firgoogleauth
+from pyios_firebase.auth import google
 
-Window.bind(on_drop_file=firgoogleauth.on_gid_signin_handle_url_kivy)
+Window.bind(on_drop_file=google.on_gid_signin_handle_url_kivy)
 ```
 
 Your app must own the Google reversed client ID URL scheme
@@ -231,6 +245,7 @@ def on_cities(snapshot: QuerySnapshot | None, error: FirebaseError | None) -> No
 | Type | What it is |
 |---|---|
 | `FirebaseError` | Every callback error: `code`, `description`, `domain`, `underlying_error` |
+| `auth.AuthError` | An Auth error: adds `name`, `email`, `updated_credential`, `cancelled`, `message` |
 | `ResultCallback[T]` | `Callable[[T \| None, FirebaseError \| None], None]` |
 | `ErrorCallback` | `Callable[[FirebaseError \| None], None]`, for writes |
 | `FirestoreData` | `Mapping[str, Any]`: data you write |
@@ -262,6 +277,9 @@ Firebase calls your code later, when the server answers. So most methods take a
 | `get_documents`, query `add_snapshot_listener` | `(query_snapshot, error)` |
 | Aggregate queries | `(aggregate_snapshot, error)` |
 | `run_transaction` | `(result, error)` |
+| Auth sign-in, link, re-authenticate, Google / Apple sheets | `(auth_data_result, error)` |
+| Auth writes (`send_password_reset`, `reload`, `delete`, `update_*`) | `(error)` |
+| `add_state_did_change_listener` | `(user)` (`None` when signed out) |
 
 The rules are the same everywhere:
 
@@ -650,6 +668,304 @@ directions.
 
 ---
 
+## Authentication
+
+```python
+from pyios_firebase.auth import Auth
+
+auth = Auth.auth()
+```
+
+Every Auth callback gets `(result, error)` or `(error)`. `error` is an `AuthError`:
+a `FirebaseError` plus `name` (the `AuthErrorCode` name), `email`,
+`updated_credential`, `cancelled` and `message`.
+
+### Know who is signed in
+
+```python
+def on_user(user):
+    if user is None:
+        show_sign_in_screen()
+    else:
+        show_home(user.uid, user.email)
+
+
+listener = auth.add_state_did_change_listener(on_user)  # runs now, then on each change
+...
+listener.remove()
+```
+
+`auth.current_user` gives the user right away, but it can be `None` for a moment
+at app start while Firebase restores the saved user; the listener is reliable.
+
+### Email and password
+
+```python
+from pyios_firebase.auth import AuthErrorCode
+
+
+def on_signed_in(result, error):
+    if error is not None:
+        if error.code == AuthErrorCode.EMAIL_ALREADY_IN_USE:
+            print("That email has an account: sign in instead")
+        else:
+            print("Sign-in failed:", error.name, error.description)
+        return
+    print("Signed in:", result.user.uid, "new account:", result.additional_user_info.is_new_user)
+
+
+auth.create_user_with_email_password("ada@example.com", "s3cret-pass", on_signed_in)
+auth.sign_in_with_email_password("ada@example.com", "s3cret-pass", on_signed_in)
+auth.sign_out()  # None, or an AuthError
+```
+
+With email enumeration protection (the default for new projects), a wrong email
+and a wrong password both give `INVALID_CREDENTIAL`.
+
+### Password reset and email verification
+
+```python
+auth.send_password_reset("ada@example.com", on_sent)
+auth.current_user.send_email_verification(on_sent)
+
+# after the user opened the link (or in your own handler for it):
+auth.current_user.reload(lambda error: print(auth.current_user.is_email_verified))
+```
+
+To handle the links in the app, pass `ActionCodeSettings(url=..., handle_code_in_app=True,
+ios_bundle_id=...)` and use `verify_password_reset_code`, `confirm_password_reset`,
+`check_action_code` and `apply_action_code` with the link's `oobCode`.
+
+### Email link (passwordless)
+
+```python
+from pyios_firebase.auth import ActionCodeSettings
+
+settings = ActionCodeSettings(
+    url="https://example.com/finish-sign-in",
+    handle_code_in_app=True,
+    ios_bundle_id="com.example.app",
+)
+auth.send_sign_in_link("ada@example.com", settings, on_sent)  # save the email on the device
+
+# when the app is opened with the link:
+if auth.is_sign_in_with_email_link(link):
+    auth.sign_in_with_email_link(saved_email, link, on_signed_in)
+```
+
+### Anonymous users, and keeping their data when they sign up
+
+```python
+from pyios_firebase.auth import EmailAuthProvider
+
+auth.sign_in_anonymously(on_signed_in)
+...
+credential = EmailAuthProvider.credential("ada@example.com", "s3cret-pass")
+auth.current_user.link_with_credential(credential, on_linked)  # same uid, now with email
+```
+
+### Google and Apple
+
+```python
+from pyios_firebase.auth.apple import start_apple_sign_in
+from pyios_firebase.auth.google import start_google_sign_in
+
+
+def on_signed_in(result, error):
+    if error is not None:
+        if not error.cancelled:          # cancelled: the user closed the sheet
+            print(error.message or error.description)
+        return
+    print("Signed in:", result.user.uid)
+
+
+start_google_sign_in(on_signed_in)
+start_apple_sign_in(on_signed_in)         # result.first_name / last_name: first sign-in only
+```
+
+- Google needs the `GoogleSignIn` framework and its URL scheme (see [Setup](#5-optional-google-sign-in-url-handling)).
+- Apple needs the `com.apple.developer.applesignin` entitlement. Apple shares the
+  user's name and email only on the **first** sign-in to the app; if that first
+  Firebase sign-in fails, the name is kept on the device for the next try.
+- `get_google_credential` / `get_apple_credential` show the sheet and give the
+  credential without signing in: use them to link the provider to the current
+  user, or to re-authenticate.
+- Before deleting an Apple user, pass `result.apple.authorization_code` (from a
+  recent sign-in) to `auth.revoke_token` (App Store rule).
+
+### Other providers
+
+```python
+from pyios_firebase.auth import OAuthProvider, PhoneAuthProvider
+
+# web flows (Microsoft, Yahoo, GitHub, OIDC, SAML), in an in-app browser
+auth.sign_in_with_provider(OAuthProvider("microsoft.com", scopes=["mail.read"]), on_signed_in)
+
+# phone: send a code, then sign in with what the user typed
+phone = PhoneAuthProvider()
+phone.verify_phone_number("+15555550100", on_code_sent)   # gives a verification_id
+auth.sign_in_with_credential(phone.credential(verification_id, code), on_signed_in)
+
+# tokens from other SDKs
+from pyios_firebase.auth import FacebookAuthProvider, GitHubAuthProvider, TwitterAuthProvider
+auth.sign_in_with_credential(FacebookAuthProvider.credential(access_token), on_signed_in)
+```
+
+Phone and web sign-in need a callback URL scheme in `Info.plist` (the reversed
+client ID, or `app-` + your `GOOGLE_APP_ID` with `-` for `:`). Without it the
+Firebase SDK stops the app; pyios-firebase checks first and gives an `AuthError`
+that names the scheme to add.
+
+### Facebook Login
+
+```python
+from pyios_firebase.auth import facebook
+
+facebook.initialize_facebook()                      # once, at app start
+facebook.start_facebook_sign_in(on_signed_in)       # or limited=True for Limited Login
+```
+
+Needs the `FacebookLogin` Swift package (`https://github.com/facebook/facebook-ios-sdk`),
+the Facebook provider enabled in the Firebase console, and in `Info.plist`:
+`FacebookAppID`, `FacebookClientToken`, `FacebookDisplayName`, the URL scheme
+`fb<APP_ID>`, and `LSApplicationQueriesSchemes` with `fbapi` and
+`fb-messenger-share-api`. Route opened URLs to `facebook.on_facebook_handle_url`
+(Kivy: `Window.bind(on_drop_file=facebook.on_facebook_handle_url_kivy)`). Classic
+login gives an access token; Limited Login (also what iOS falls back to when the
+user has not allowed tracking) gives an OpenID token; both sign in.
+
+### Multi-factor authentication (SMS and TOTP)
+
+Needs Identity Platform, the factor enabled in the console, and a verified email.
+
+```python
+from pyios_firebase.auth import (
+    AuthErrorCode, PhoneAuthProvider, PhoneMultiFactorGenerator, TOTPMultiFactorGenerator,
+)
+
+# enroll an SMS factor
+user = auth.current_user
+phone = PhoneAuthProvider()
+def on_session(session, error):
+    phone.verify_phone_number("+15555550100", on_code_sent, multi_factor_session=session)
+def on_code_sent(verification_id, error):
+    assertion = PhoneMultiFactorGenerator.assertion(phone.credential(verification_id, code))
+    user.multi_factor.enroll(assertion, "My phone", on_enrolled)
+user.multi_factor.get_session(on_session)
+
+# enroll a TOTP factor (authenticator app)
+def on_secret(secret, error):
+    show_qr_code(secret.generate_qr_code_url(user.email, "My App"))
+    ...  # when the user types the code from the app:
+    user.multi_factor.enroll(TOTPMultiFactorGenerator.assertion_for_enrollment(secret, code), "Authenticator")
+user.multi_factor.get_session(lambda session, error: TOTPMultiFactorGenerator.generate_secret(session, on_secret))
+
+# sign in when a second factor is needed
+def on_signed_in(result, error):
+    if error is not None and error.code == AuthErrorCode.SECOND_FACTOR_REQUIRED:
+        resolver = error.resolver
+        hint = resolver.hints[0]                       # let the user choose
+        if hint.factor_id == "phone":
+            phone.verify_phone_number_for_sign_in(hint, resolver.session, on_sign_in_code_sent)
+        else:                                          # "totp"
+            resolver.resolve_sign_in(TOTPMultiFactorGenerator.assertion_for_sign_in(hint.uid, code), on_signed_in)
+```
+
+`user.multi_factor.enrolled_factors` lists the factors; `unenroll(factor)` removes one.
+
+### Shared keychain (cross-app sign-in)
+
+With the Keychain Sharing capability and the same access group in both apps:
+
+```python
+error = auth.use_user_access_group("TEAMID.com.example.shared")
+user, error = auth.get_stored_user("TEAMID.com.example.shared")  # without switching to it
+if user is not None:
+    auth.update_current_user(user, on_done)
+```
+
+### Passing state in email actions
+
+Put the state in the continue URL, and read it back from the link the app is opened with:
+
+```python
+import urllib.parse
+from pyios_firebase.auth import ActionCodeSettings, ActionCodeURL
+
+settings = ActionCodeSettings(url="https://example.com/checkout?cart=42", handle_code_in_app=True,
+                              ios_bundle_id="com.example.app")
+auth.send_sign_in_link(email, settings, on_sent)
+
+info = ActionCodeURL.from_link(opened_link)
+cart = urllib.parse.parse_qs(urllib.parse.urlsplit(info.continue_url).query)["cart"][0]
+```
+
+`ActionCodeURL` parses links in Python: Firebase iOS SDK 13.1.1's own parser cuts
+a continue URL at its first `&`, losing the rest of the state.
+
+### Tokens for your backend
+
+```python
+def on_token(result, error):
+    send_to_backend(result.token)            # verify it with the Admin SDK
+    print(result.claims.get("role"))         # custom claims set by your backend
+
+
+auth.current_user.get_id_token_result(on_token, force_refresh=True)
+```
+
+`add_id_token_did_change_listener` also fires when the token is refreshed
+(about once an hour).
+
+### Profile and account
+
+```python
+user = auth.current_user
+user.update_profile(on_done, display_name="Ada Lovelace", photo_url=None)  # None removes it
+user.update_password("new-pass-123", on_done)
+user.reauthenticate_with_credential(credential, on_done)  # before sensitive changes
+user.delete(on_done)
+user.unlink("google.com", on_unlinked)
+```
+
+`REQUIRES_RECENT_LOGIN` means: re-authenticate, then try again.
+
+### Firebase's iOS Authentication guide, page by page
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Sign in with a pre-built UI | Not available: FirebaseUI's Swift package is SwiftUI-only, which Rubicon cannot reach, and its UIKit version is CocoaPods-only. Build the screens with your UI toolkit and the methods below |
+| Get Started, Manage Users | `Auth`, `User` (profile, `update_*`, `delete`, `reload`, `send_email_verification`, `provider_data`, `metadata`) |
+| Password Authentication | `create_user_with_email_password`, `sign_in_with_email_password`, `send_password_reset`, `confirm_password_reset` |
+| Email Link Authentication, Email Link Migration | `send_sign_in_link`, `is_sign_in_with_email_link`, `sign_in_with_email_link`; `ActionCodeSettings.link_domain` for the Hosting domain that replaces Dynamic Links |
+| Sign in with Google | `auth.google.start_google_sign_in` / `get_google_credential` |
+| Facebook Login | `auth.facebook.start_facebook_sign_in` (classic and Limited Login) / `get_facebook_credential` |
+| Sign in with Apple | `auth.apple.start_apple_sign_in` / `get_apple_credential`, `Auth.revoke_token` |
+| Twitter, GitHub, Microsoft, Yahoo | `sign_in_with_provider(OAuthProvider("twitter.com" / "github.com" / "microsoft.com" / "yahoo.com"))`, or a credential from tokens you have |
+| Game Center Sign-in | `GameCenterAuthProvider.get_credential` |
+| Phone Number | `PhoneAuthProvider.verify_phone_number` + `credential`; `set_apns_token`, `can_handle_notification`, `can_handle_url` |
+| OpenID Connect | `OAuthProvider("oidc.<id>")` web flow, or `OAuthProvider.credential("oidc.<id>", id_token=...)`; SAML with `"saml.<id>"` |
+| Use a Custom Auth System | `sign_in_with_custom_token` |
+| Anonymous Authentication | `sign_in_anonymously`, then `link_with_credential` |
+| Cross-app auth with shared Keychain | `use_user_access_group`, `get_stored_user`, `update_current_user` |
+| Link Multiple Auth Providers | `link_with_credential`, `link_with_provider`, `unlink`, `AuthError.updated_credential` |
+| SMS Multi-factor Auth, TOTP Multi-factor Auth | `pyios_firebase.auth.multi_factor` (below) |
+| Passing State in Email Actions | `ActionCodeSettings(url=...)` and `ActionCodeURL.from_link(link).continue_url` |
+| Handle Errors | `AuthError` / `AuthErrorCode` |
+
+### Use the local emulator
+
+```python
+core.configure()
+Auth.auth().use_emulator("127.0.0.1", 9099)
+```
+
+The emulator also turns app verification off, so phone sign-in works without
+APNs or reCAPTCHA. Its REST API shows the emails and SMS codes it "sent"
+(`/emulator/v1/projects/<project>/oobCodes` and `/verificationCodes`).
+
+---
+
 ## API reference
 
 ### Firestore
@@ -818,6 +1134,70 @@ them up by name. They are kept in `pyios_firebase/firestore/enums.py`:
 
 If you update the Firebase SDK, check these values in the SDK header files.
 
+### Auth
+
+#### `Auth`
+
+| Member | Notes |
+|---|---|
+| `Auth.auth()` | The shared instance |
+| `current_user` | A `User`, or `None` |
+| `add_state_did_change_listener(listener)` / `add_id_token_did_change_listener(listener)` | `listener(user)`; returns an `AuthStateListener` (`.remove()`) |
+| `sign_in_with_email_password(email, password, cb)` / `create_user_with_email_password(...)` | `cb(AuthDataResult, error)` |
+| `sign_in_anonymously(cb)`, `sign_in_with_custom_token(token, cb)` | |
+| `sign_in_with_credential(credential, cb)`, `sign_in_with_provider(OAuthProvider, cb)` | |
+| `send_sign_in_link(email, settings, cb)`, `is_sign_in_with_email_link(link)`, `sign_in_with_email_link(email, link, cb)` | Passwordless |
+| `send_password_reset(email, cb, settings)`, `verify_password_reset_code(code, cb)`, `confirm_password_reset(code, password, cb)` | |
+| `check_action_code(code, cb)`, `apply_action_code(code, cb)` | `cb(ActionCodeInfo, error)` / `cb(error)` |
+| `sign_out()`, `update_current_user(user, cb)`, `revoke_token(code, cb)` | |
+| `get_stored_user(access_group)` | `(user, error)`: the user in a shared keychain |
+| `use_emulator(host, port)`, `is_using_emulator`, `language_code`, `use_app_language()`, `tenant_id`, `app_verification_disabled_for_testing`, `use_user_access_group(group)` | Settings |
+| `can_handle_url(url)`, `can_handle_notification(user_info)`, `set_apns_token(token, type)` | App delegate hooks (phone, OAuth) |
+
+#### `User`
+
+- Profile: `uid`, `email`, `display_name`, `phone_number`, `photo_url`, `provider_id`,
+  `is_anonymous`, `is_email_verified`, `provider_data` (list of `UserInfo`),
+  `metadata` (`UserMetadata`: `creation_date`, `last_sign_in_date`), `tenant_id`,
+  `refresh_token`, `is_signed_in`
+- Tokens: `get_id_token(cb, force_refresh=False)`, `get_id_token_result(cb, force_refresh=False)` → `IDTokenResult` (`token`, `claims`, `expiration_date`, `issued_at_date`, `auth_date`, `sign_in_provider`, `sign_in_second_factor`)
+- Account: `reload`, `delete`, `update_password`, `update_email`, `update_profile(cb, *, display_name, photo_url)`, `update_phone_number`, `send_email_verification`, `send_email_verification_before_updating_email`
+- Providers: `link_with_credential`, `link_with_provider`, `unlink`, `reauthenticate_with_credential`, `reauthenticate_with_provider`
+
+#### Credentials and providers
+
+| Provider | Make a credential |
+|---|---|
+| `EmailAuthProvider` | `credential(email, password)`, `credential_with_link(email, link)` |
+| `GoogleAuthProvider` | `credential(id_token, access_token)` (or `auth.google`) |
+| `OAuthProvider` | `OAuthProvider(id, scopes, custom_parameters)` for web flows; `credential(id, id_token, access_token, raw_nonce)`; `apple_credential(id_token, raw_nonce, given_name, family_name)` (or `auth.apple`) |
+| `PhoneAuthProvider` | `verify_phone_number(number, cb)`, then `credential(verification_id, code)` |
+| `FacebookAuthProvider` | `credential(access_token)` |
+| `GitHubAuthProvider` | `credential(token)` |
+| `TwitterAuthProvider` | `credential(token, secret)` |
+| `GameCenterAuthProvider` | `get_credential(cb)` |
+
+Each has a `PROVIDER_ID`. `AuthDataResult` has `user`, `additional_user_info`
+(`provider_id`, `is_new_user`, `username`, `profile`) and `credential`.
+
+#### Multi-factor
+
+- `User.multi_factor` → `MultiFactor`: `enrolled_factors`, `get_session(cb)`, `enroll(assertion, display_name, cb)`, `unenroll(factor_or_uid, cb)`
+- `MultiFactorInfo` (`uid`, `factor_id`, `display_name`, `enrollment_date`), `PhoneMultiFactorInfo` (+ `phone_number`)
+- `PhoneMultiFactorGenerator.assertion(credential)`; `PhoneAuthProvider.verify_phone_number(..., multi_factor_session=)`, `verify_phone_number_for_sign_in(hint, session, cb)`
+- `TOTPMultiFactorGenerator.generate_secret(session, cb)`, `assertion_for_enrollment(secret, code)`, `assertion_for_sign_in(enrollment_id, code)`; `TOTPSecret.shared_secret_key()`, `generate_qr_code_url(account, issuer)`, `open_in_otp_app(url)`
+- `MultiFactorResolver` (from `AuthError.resolver`): `hints`, `session`, `resolve_sign_in(assertion, cb)`
+
+#### Facebook (`pyios_firebase.auth.facebook`)
+
+`initialize_facebook()`, `start_facebook_sign_in(cb, permissions, limited)`, `get_facebook_credential(cb, permissions, limited)`, `sign_out_of_facebook()`, `on_facebook_handle_url(url)`, `on_facebook_handle_url_kivy(...)`
+
+#### Errors
+
+`AuthError` (keys above, plus `resolver` for `SECOND_FACTOR_REQUIRED`) and `AuthErrorCode`: every `FIRAuthErrorCode` of the SDK,
+by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
+`ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL`, ...).
+
 ---
 
 ## Good to know
@@ -858,6 +1238,8 @@ If you update the Firebase SDK, check these values in the SDK header files.
 | `NameError: ... FIRFirestore` (or another `FIR...` class) | That Firebase framework is not part of your iOS build |
 | `Firebase sign-in error: An internal error has occurred` | Print `error.code`, `error.domain` and `error.underlying_error`. Common causes: missing Keychain Sharing, wrong `GoogleService-Info.plist`, sign-in provider not enabled, API key limits, App Check enforcement without a registered debug token |
 | `permission denied` | Your Firestore rules need a signed-in user, or the rules do not allow this read or write |
+| The app stops with "Please register custom URL scheme" | Phone or web sign-in without the callback URL scheme in `Info.plist`. Use pyios-firebase's methods: they give an `AuthError` naming the scheme instead |
+| `NOT_FOUND` / `INVALID_CREDENTIAL` on sign-in with the emulator | The emulator starts empty each run: create the account first |
 | `core.default_app()` is `None` | `core.configure()` was not called, or it was called too late |
 | App Check blocks requests | Call `initialize_debug_appcheck()` **before** `core.configure()`, and add the debug token in the Firebase console |
 | A query fails with an index error | Open the link in the error message and create the index |
@@ -869,13 +1251,24 @@ If you update the Firebase SDK, check these values in the SDK header files.
 
 ### From the flat 0.1 modules
 
-Firebase Core and Firestore are now subpackages:
+Firebase Core, Auth and Firestore are now subpackages:
 
 | Before | Now |
 |---|---|
 | `pyios_firebase.firapp.configure()` | `pyios_firebase.core.configure()` |
 | `pyios_firebase.firfirestore`, `firfieldvalue`, `firfilter` | `pyios_firebase.firestore` |
-| `pyios_firebase.firappcheck`, `firuser`, `firgoogleauth` | unchanged in this release |
+| `pyios_firebase.firuser.User` | `pyios_firebase.auth.User` (also `Auth.auth().current_user`) |
+| `pyios_firebase.firgoogleauth` | `pyios_firebase.auth.google` |
+| `pyios_firebase.firappcheck` | unchanged in this release |
+
+Auth changes:
+
+- Sign-in callbacks get `(result, error)` like the rest of the library, instead
+  of `(data, is_error)`: `result` is an `AuthDataResult` (`result.user.uid`), and
+  `error` is an `AuthError` (still with `cancelled`).
+- `User().uid`, `.email` and `.display_name` are `str` or `None` (not Objective-C
+  strings); `User().user` and `User().auth` are still the native objects.
+- Several sign-ins can run at once: each keeps its own callback.
 
 Firestore changes:
 
@@ -925,10 +1318,19 @@ e2e/run_ios_e2e.sh
 
 This builds a small Kivy app (`e2e/ios/`) with the wheel from your checkout and
 the real Firebase iOS SDK, runs it in the iOS Simulator against the local
-Firestore emulator, and exits non-zero if any test fails. It covers every value
-type, writes and field values, merges, queries and cursors, OR/AND filters,
-collection groups, aggregates, listeners and their change types, batches,
-transactions, and read sources.
+Firestore and Auth emulators, and exits non-zero if any test fails.
+
+- Firestore: every value type, writes and field values, merges, queries and
+  cursors, OR/AND filters, collection groups, aggregates, listeners and their
+  change types, batches, transactions, and read sources.
+- Auth: email/password, errors and their codes, state and ID token listeners,
+  anonymous upgrade, linking and unlinking a provider, custom tokens and claims,
+  phone sign-in, profile and tokens, re-authentication, password change and
+  account deletion, password reset, email verification, email link sign-in,
+  SMS multi-factor enrollment and sign-in, passing state in email links, the
+  shared keychain, OAuth providers, and the Facebook SDK bridge. The emails and
+  SMS codes are read from the Auth emulator's REST API. TOTP is skipped: the Auth
+  emulator supports only SMS second factors.
 
 It needs Xcode with an iOS simulator, [uv](https://docs.astral.sh/uv/),
 `firebase-tools` (`npm i -g firebase-tools`) and Java 21+ for the emulator. It
@@ -938,7 +1340,9 @@ build takes a few minutes; results, the app log and a screenshot land in
 `e2e/ios/build/e2e/`.
 
 Unit tests run fake Firebase objects; the end-to-end suite is what catches
-mismatches with the real SDK. It found three bugs the unit tests could not.
+mismatches with the real SDK. It found bugs the unit tests could not: Objective-C
+getters Rubicon exposes as methods (`is_from_cache`, `NSDate` values), TLS left on
+for the Firestore emulator, and the SDK stopping the app for a missing URL scheme.
 
 `tests/test_docs.py` fails if a public function or method has a parameter its
 `Args:` docs do not describe (or describes one it does not have).
