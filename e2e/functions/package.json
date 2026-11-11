@@ -1,0 +1,11 @@
+{
+  "name": "pyios-firebase-e2e-functions",
+  "description": "Callable functions the iOS e2e suite calls through the Functions emulator",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "dependencies": {
+    "firebase-admin": "^13.5.0",
+    "firebase-functions": "^7.4.0"
+  }
+}

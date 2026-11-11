@@ -30,10 +30,15 @@ exclude = ["kivy-garden", "requests", "charset-normalizer", "idna", "urllib3", "
 [tool.kivy.ios.python]
 version = "3.15.2"
 
+# Remote Config in-app defaults, read from the app bundle (remote_config_tests.py)
+[[tool.kivy.ios.include_files]]
+dest = "."
+sources = ["RemoteConfigDefaults.plist"]
+
 [tool.kivy.ios.native.swift_packages.Firebase]
 url = "https://github.com/firebase/firebase-ios-sdk.git"
 requirement = { from = "13.1.1" }
-products = ["FirebaseAuth", "FirebaseFirestore"]
+products = ["FirebaseAppCheck", "FirebaseAuth", "FirebaseFirestore", "FirebaseFunctions", "FirebaseRemoteConfig", "FirebaseStorage"]
 
 # Facebook Login, for pyios_firebase.auth.facebook (the e2e app checks the
 # SDK's classes and selectors; it cannot log in without a Facebook app)

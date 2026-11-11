@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Remote Config in-app defaults for the e2e suite (remote_config_tests.py) -->
+<plist version="1.0">
+<dict>
+  <key>welcome_message</key>
+  <string>Hello from the plist</string>
+  <key>max_items</key>
+  <integer>25</integer>
+  <key>discount</key>
+  <real>0.15</real>
+  <key>new_checkout</key>
+  <true/>
+  <key>ui_theme</key>
+  <string>{"color": "green", "dark": false}</string>
+</dict>
+</plist>

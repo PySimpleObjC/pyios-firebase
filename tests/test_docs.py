@@ -13,9 +13,13 @@ import re
 import pytest
 
 PACKAGE = pathlib.Path(__file__).parent.parent / "src" / "pyios_firebase"
-SKIP_CLASSES = {"PyAppleSignInDelegate"}
-# the 0.1 App Check module, documented when it moves to a subpackage
-LEGACY_MODULES = {"firappcheck.py"}
+# Objective-C bridges that Firebase or UIKit call, not apps
+SKIP_CLASSES = {
+    "PyAppleSignInDelegate",
+    "PyAppCheckProviderBridge",
+    "PyAppCheckProviderFactory",
+}
+LEGACY_MODULES: set[str] = set()
 ARG_LINE = re.compile(r"^    \*{0,2}(\w+)(?: \([^)]*\))?:", re.MULTILINE)
 
 
