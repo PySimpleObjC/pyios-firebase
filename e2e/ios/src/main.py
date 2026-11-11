@@ -1,8 +1,14 @@
 """pyios-firebase end-to-end test app.
 
-Runs the Firestore, Auth, Functions, Storage, Remote Config and App Check
-suites against the local Firebase emulators through the real Firebase iOS SDK, shows the results on screen, prints them (prefix
-``PYIOS-E2E``), and writes them to ``Documents/pyios-e2e-results.json``.
+Runs the Firestore, Auth, Functions, Storage, Realtime Database, Remote
+Config, App Check, Analytics, Crashlytics and Messaging suites against the
+local Firebase emulators through the real Firebase iOS SDK, shows the results
+on screen, prints them (prefix ``PYIOS-E2E``), and writes them to
+``Documents/pyios-e2e-results.json``.
+
+``E2E_CRASH_AT_END=1``: crash on purpose after the results (Crashlytics).
+``E2E_PHASE=after-crash``: only the Crashlytics checks of that crash, written
+to ``Documents/pyios-e2e-results-after-crash.json``.
 
 No GoogleService-Info.plist: Firebase is configured in code for the offline
 ``demo-pyios-firebase`` project, which only the emulator serves.
@@ -24,13 +30,21 @@ AUTH_EMULATOR_HOST = os.environ.get("FIREBASE_AUTH_EMULATOR_HOST", "127.0.0.1:90
 FUNCTIONS_EMULATOR_HOST = "127.0.0.1:5001"
 STORAGE_EMULATOR_HOST = os.environ.get("FIREBASE_STORAGE_EMULATOR_HOST", "127.0.0.1:9199")
 STORAGE_BUCKET = "demo-pyios-firebase.appspot.com"
-RESULTS = os.path.join(os.path.expanduser("~/Documents"), "pyios-e2e-results.json")
+DATABASE_URL = "https://demo-pyios-firebase-default-rtdb.firebaseio.com"
+DATABASE_EMULATOR_HOST = os.environ.get("FIREBASE_DATABASE_EMULATOR_HOST", "127.0.0.1:9000")
+PHASE = os.environ.get("E2E_PHASE", "main")
+CRASH_AT_END = os.environ.get("E2E_CRASH_AT_END") == "1"
+RESULTS = os.path.join(
+    os.path.expanduser("~/Documents"),
+    "pyios-e2e-results-after-crash.json" if PHASE == "after-crash" else "pyios-e2e-results.json",
+)
 
 
 def configure_firebase() -> None:
     from app_check_tests import E2EAppCheckProvider
     from pyios_firebase import app_check
     from pyios_firebase.auth import Auth
+    from pyios_firebase.database import Database
     from pyios_firebase.firestore import Firestore
     from pyios_firebase.functions import Functions
     from pyios_firebase.storage import Storage
@@ -46,6 +60,7 @@ def configure_firebase() -> None:
     # Firebase Installations (used by Remote Config) checks the format: 39 characters
     options.APIKey = "AIzaSyD-emulator-only-not-a-real-key-00"
     options.storageBucket = STORAGE_BUCKET
+    options.databaseURL = DATABASE_URL
     objc_class("FIRApp").configureWithOptions_(options)
 
     host, port = EMULATOR_HOST.rsplit(":", 1)
@@ -57,6 +72,8 @@ def configure_firebase() -> None:
     Functions.functions("europe-west1").use_emulator(host, int(port))
     host, port = STORAGE_EMULATOR_HOST.rsplit(":", 1)
     Storage.storage().use_emulator(host, int(port))
+    host, port = DATABASE_EMULATOR_HOST.rsplit(":", 1)
+    Database.database().use_emulator(host, int(port))
 
 
 class E2EApp(App):
@@ -86,18 +103,27 @@ class E2EApp(App):
             pass
         try:
             configure_firebase()
+            from analytics_tests import TESTS as ANALYTICS_TESTS
             from app_check_tests import TESTS as APP_CHECK_TESTS
             from auth_tests import TESTS as AUTH_TESTS
+            from crashlytics_tests import AFTER_CRASH_TESTS
+            from crashlytics_tests import TESTS as CRASHLYTICS_TESTS
+            from database_tests import TESTS as DATABASE_TESTS
             from firestore_tests import RUN_ID
             from firestore_tests import TESTS as FIRESTORE_TESTS
             from functions_tests import TESTS as FUNCTIONS_TESTS
+            from messaging_tests import TESTS as MESSAGING_TESTS
             from remote_config_tests import TESTS as REMOTE_CONFIG_TESTS
             from storage_tests import TESTS as STORAGE_TESTS
 
-            TESTS = (
-                FIRESTORE_TESTS + AUTH_TESTS + FUNCTIONS_TESTS + STORAGE_TESTS
-                + REMOTE_CONFIG_TESTS + APP_CHECK_TESTS
-            )
+            if PHASE == "after-crash":
+                TESTS = AFTER_CRASH_TESTS
+            else:
+                TESTS = (
+                    FIRESTORE_TESTS + AUTH_TESTS + FUNCTIONS_TESTS + STORAGE_TESTS
+                    + DATABASE_TESTS + REMOTE_CONFIG_TESTS + APP_CHECK_TESTS
+                    + ANALYTICS_TESTS + CRASHLYTICS_TESTS + MESSAGING_TESTS
+                )
             from runner import Runner, dumps
         except Exception:  # noqa: BLE001
             self.finish({"passed": 0, "failed": 1, "results": [
@@ -115,7 +141,10 @@ class E2EApp(App):
             lambda report: self.finish(report, dumps),
             on_test_start=self.test_started,
         )
-        self.warm_up(runner.start)
+        if PHASE == "after-crash":
+            runner.start()
+        else:
+            self.warm_up(runner.start)
 
     def warm_up(self, then):
         """One Firestore read before the tests: the emulator's first connection
@@ -167,6 +196,10 @@ class E2EApp(App):
                 print(f"PYIOS-E2E FAILED {result['name']}:\n{result['detail']}", flush=True)
         lines = getattr(self, "lines", [])
         self.label.text = "\n".join([*lines, "", summary.replace("PYIOS-E2E ", "")])
+        if CRASH_AT_END and PHASE != "after-crash":
+            from crashlytics_tests import crash_now
+
+            crash_now()
 
 
 if __name__ == "__main__":

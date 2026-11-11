@@ -115,3 +115,63 @@ class FIRAppCheckToken(NSObject):
         self.expirationDate = expiration_date
         _alive.append(self)
         return self
+
+
+class FIRTransactionResult(NSObject):
+    """Stands in for the Realtime Database's ``FIRTransactionResult``."""
+
+    value = objc_property()
+    aborted = objc_property(c_int32)
+
+    @objc_classmethod
+    def successWithValue_(cls, value) -> objc_id:
+        result = cls.alloc().init()
+        result.value = value
+        result.aborted = 0
+        _alive.append(result)
+        return result
+
+    @objc_classmethod
+    def abort(cls) -> objc_id:
+        result = cls.alloc().init()
+        result.aborted = 1
+        _alive.append(result)
+        return result
+
+
+class FIRMutableData(NSObject):
+    """Stands in for ``FIRMutableData``: a value and a priority."""
+
+    value = objc_property()
+    priority = objc_property()
+
+
+class FIRStackFrame(NSObject):
+    """Stands in for Crashlytics' ``FIRStackFrame``."""
+
+    symbol = objc_property()
+    file = objc_property()
+    line = objc_property(c_int64)
+
+    @objc_method
+    def initWithSymbol_file_line_(self, symbol, file, line: c_int64) -> objc_id:
+        self.symbol = symbol
+        self.file = file
+        self.line = line
+        _alive.append(self)
+        return self
+
+
+class FIRExceptionModel(NSObject):
+    """Stands in for Crashlytics' ``FIRExceptionModel``."""
+
+    name = objc_property()
+    reason = objc_property()
+    stackTrace = objc_property()
+
+    @objc_method
+    def initWithName_reason_(self, name, reason) -> objc_id:
+        self.name = name
+        self.reason = reason
+        _alive.append(self)
+        return self

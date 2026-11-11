@@ -319,3 +319,116 @@ def app_check_usage() -> None:
     AppCheck.app_check().token(on_token, force_refresh=True)
     AppCheck.app_check().add_token_listener(lambda token: None).remove()
     app_check.use_recaptcha_provider(42)  # type: ignore[arg-type]
+
+
+def database_usage() -> None:
+    from pyios_firebase.database import (
+        Database,
+        DatabaseError,
+        DatabaseObserver,
+        DatabaseQuery,
+        DatabaseReference,
+        DataEventType,
+        DataSnapshot,
+        MutableData,
+        ServerValue,
+        TransactionResult,
+    )
+
+    ref = Database.database().reference("rooms/general")
+    assert_type(ref, DatabaseReference)
+    assert_type(ref.child("messages").key, str | None)
+    query = ref.order_by_child("sent_at").limit_to_last(50)
+    assert_type(query, DatabaseQuery)
+
+    def on_message(snapshot: DataSnapshot, previous_key: str | None) -> None:
+        assert_type(snapshot.value, Any)
+        for child in snapshot:
+            assert_type(child, DataSnapshot)
+
+    observer = query.observe(DataEventType.CHILD_ADDED, on_message)
+    assert_type(observer, DatabaseObserver)
+    observer.remove()
+
+    def on_written(error: DatabaseError | None) -> None:
+        if error is not None:
+            assert_type(error.name, str)
+
+    ref.child_by_auto_id().set_value({"at": ServerValue.timestamp()}, on_written)
+
+    def add_one(data: MutableData) -> TransactionResult:
+        data.value = (data.value or 0) + 1
+        return TransactionResult.success(data)
+
+    def on_done(
+        error: DatabaseError | None, committed: bool, snapshot: DataSnapshot | None
+    ) -> None:
+        pass
+
+    ref.run_transaction(add_one, on_done)
+    ref.on_disconnect().remove_value()
+    ref.limit_to_first("10")  # type: ignore[arg-type]
+
+
+def analytics_usage() -> None:
+    from pyios_firebase.analytics import (
+        Analytics,
+        ConsentStatus,
+        ConsentType,
+        Event,
+        Param,
+    )
+
+    Analytics.log_event(Event.SELECT_CONTENT, {Param.CONTENT_TYPE: "image"})
+    Analytics.log_screen_view("Home")
+    Analytics.set_consent({ConsentType.AD_STORAGE: ConsentStatus.DENIED})
+    assert_type(Analytics.app_instance_id(), str | None)
+    Analytics.session_id(lambda session, error: None)
+    Analytics.log_event(42)  # type: ignore[arg-type]
+
+
+def crashlytics_usage() -> None:
+    from pyios_firebase.crashlytics import Crashlytics, CrashlyticsReport
+
+    crashlytics = Crashlytics.crashlytics()
+    crashlytics.install_excepthook()
+    try:
+        pass
+    except ValueError as e:
+        crashlytics.record_exception(e)
+
+    def on_report(report: CrashlyticsReport | None) -> None:
+        if report is not None:
+            assert_type(report.has_crash, bool)
+
+    crashlytics.check_and_update_unsent_reports(on_report)
+    crashlytics.collection_enabled = False
+    crashlytics.record_exception("boom")  # type: ignore[arg-type]
+
+
+def messaging_usage() -> None:
+    from pyios_firebase.messaging import Messaging, MessagingError, notifications
+    from pyios_firebase.messaging.notifications import (
+        AuthorizationOptions,
+        Notification,
+        PresentationOptions,
+    )
+
+    messaging = Messaging.messaging()
+
+    def on_token(token: str | None, error: MessagingError | None) -> None:
+        if error is not None:
+            assert_type(error.name, str)
+
+    messaging.token(on_token)
+    remove = messaging.add_token_listener(lambda token: None)
+    remove()
+    messaging.subscribe_to_topic("news")
+
+    def on_foreground(notification: Notification) -> int:
+        assert_type(notification.data, dict[str, Any])
+        return PresentationOptions.BANNER
+
+    notifications.set_handlers(on_foreground=on_foreground)
+    notifications.request_permission(AuthorizationOptions.ALERT)
+    messaging.subscribe_to_topic(["news"])  # type: ignore[arg-type]

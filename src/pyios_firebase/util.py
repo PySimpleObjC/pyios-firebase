@@ -22,6 +22,7 @@ __all__ = (
     "nserror_to_dict",
     "objc_class",
     "objc_instance",
+    "objc_protocols",
     "one_shot_block",
     "timestamp_to_datetime",
     "to_firestore",
@@ -79,6 +80,31 @@ def _optional_class(name: str) -> ObjCObject | None:
         return objc_class(name)
     except NameError:
         return None
+
+
+def objc_protocols(*names: str) -> list[ObjCObject]:
+    """The Objective-C protocols with these names that the app has.
+
+    For the ``protocols=`` of a Python class that Firebase or UIKit calls:
+    a protocol the app does not have (its framework is not linked) is left out.
+
+    Args:
+        *names: the protocol names, for example ``"FIRMessagingDelegate"``.
+
+    Returns:
+        The protocols found, in order.
+    """
+    # imported here: a module-level import of ObjCProtocol makes pyright lose
+    # the type of Rubicon's NSObject in every module that imports this one
+    from rubicon.objc import ObjCProtocol
+
+    found: list[ObjCObject] = []
+    for name in names:
+        try:
+            found.append(ObjCProtocol(name))
+        except NameError:
+            pass
+    return found
 
 
 # ---- keeping blocks alive ---------------------------------------------------

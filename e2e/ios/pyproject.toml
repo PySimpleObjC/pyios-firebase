@@ -38,7 +38,18 @@ sources = ["RemoteConfigDefaults.plist"]
 [tool.kivy.ios.native.swift_packages.Firebase]
 url = "https://github.com/firebase/firebase-ios-sdk.git"
 requirement = { from = "13.1.1" }
-products = ["FirebaseAppCheck", "FirebaseAuth", "FirebaseFirestore", "FirebaseFunctions", "FirebaseRemoteConfig", "FirebaseStorage"]
+products = [
+    "FirebaseAnalytics",
+    "FirebaseAppCheck",
+    "FirebaseAuth",
+    "FirebaseCrashlytics",
+    "FirebaseDatabase",
+    "FirebaseFirestore",
+    "FirebaseFunctions",
+    "FirebaseMessaging",
+    "FirebaseRemoteConfig",
+    "FirebaseStorage",
+]
 
 # Facebook Login, for pyios_firebase.auth.facebook (the e2e app checks the
 # SDK's classes and selectors; it cannot log in without a Facebook app)
@@ -56,3 +67,8 @@ OTHER_LDFLAGS = "$(inherited) -ObjC"
 [[tool.kivy.ios.info_plist.CFBundleURLTypes]]
 CFBundleTypeRole = "Editor"
 CFBundleURLSchemes = ["app-1-1234567890-ios-0123456789abcdef"]
+
+# Crashlytics keeps reports on the device (crashlytics_tests.py reads them with
+# the unsent-report API); nothing is sent for the demo project
+[tool.kivy.ios.info_plist]
+FirebaseCrashlyticsCollectionEnabled = false
