@@ -12,6 +12,7 @@ needs its Firebase framework in the app.
 - ``pyios_firebase.firestore``: Cloud Firestore
 - ``pyios_firebase.functions``: Cloud Functions (HTTPS callables)
 - ``pyios_firebase.messaging``: Cloud Messaging and notifications
+- ``pyios_firebase.performance``: Performance Monitoring
 - ``pyios_firebase.remote_config``: Remote Config
 - ``pyios_firebase.storage``: Cloud Storage
 - ``pyios_firebase.types``: types for your own annotations

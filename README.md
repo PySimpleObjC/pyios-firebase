@@ -36,12 +36,13 @@ db.collection_with_path("cities").document_with_path("SF")
 15. [Analytics](#analytics)
 16. [Crashlytics](#crashlytics)
 17. [Cloud Messaging](#cloud-messaging)
-18. [API reference](#api-reference)
-19. [Good to know](#good-to-know)
-20. [Troubleshooting](#troubleshooting)
-21. [Migrating](#migrating)
-22. [Development](#development)
-23. [Licenses](#licenses)
+18. [Performance Monitoring](#performance-monitoring)
+19. [API reference](#api-reference)
+20. [Good to know](#good-to-know)
+21. [Troubleshooting](#troubleshooting)
+22. [Migrating](#migrating)
+23. [Development](#development)
+24. [Licenses](#licenses)
 
 ---
 
@@ -98,6 +99,9 @@ db.collection_with_path("cities").document_with_path("SF")
 - **Cloud Messaging**: the FCM token and its listener, topics, APNs token,
   installation ID registration; notification permission, foreground
   presentation and taps in Python
+- **Performance Monitoring**: custom code traces with metrics and attributes
+  (`with` blocks), HTTP metrics for requests made from Python, data collection
+  and instrumentation settings; names checked before they are dropped
 - Pure Python. No `.m` or `.h` files.
 - Callback blocks are kept alive for you, so they are not deleted too early.
 - Each product is its own subpackage. You only need the Firebase frameworks of
@@ -127,6 +131,7 @@ db.collection_with_path("cities").document_with_path("SF")
   | `analytics` | `FirebaseAnalytics` |
   | `crashlytics` | `FirebaseCrashlytics` (+ the dSYM upload run script) |
   | `messaging` | `FirebaseMessaging` (+ the Push Notifications capability) |
+  | `performance` | `FirebasePerformance` |
 
 - A `GoogleService-Info.plist` file from your Firebase project, added to the app
 
@@ -170,8 +175,9 @@ pyios_firebase/
 ├── app_check/           providers, AppCheck, AppCheckToken, AppCheckProvider
 ├── analytics/           Analytics, Event, Param, UserProperty, consent
 ├── crashlytics/         Crashlytics, ExceptionModel, StackFrame, CrashlyticsReport
-└── messaging/           Messaging, MessagingError, APNSTokenType
-    └── notifications.py permission, handlers, Notification
+├── messaging/           Messaging, MessagingError, APNSTokenType
+│   └── notifications.py permission, handlers, Notification
+└── performance/         Performance, Trace, HTTPMetric, HTTPMethod
 ```
 
 Import from the subpackage:
@@ -1364,6 +1370,44 @@ notification instead.
 
 ---
 
+## Performance Monitoring
+
+```python
+from pyios_firebase.performance import HTTPMethod, HTTPMetric, Performance
+
+with Performance.performance().trace("load_feed") as trace:   # started and stopped for you
+    items = load_feed()
+    trace.increment_metric("items", len(items))
+    trace.put_attribute("source", "cache")
+
+# requests made from Python (urllib, requests, httpx) are not seen by the SDK
+with HTTPMetric("https://api.example.com/feed", HTTPMethod.GET) as metric:
+    response = httpx.get("https://api.example.com/feed")
+    metric.response_code = response.status_code
+    metric.response_payload_size = len(response.content)
+    metric.response_content_type = response.headers.get("content-type")
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Get started | Add `FirebasePerformance`: app start, screen rendering and `NSURLSession` requests are measured by the SDK |
+| Add custom code traces | `trace(name)` (with `with`, or `start()` / `stop()`), `start_trace(name)` |
+| Custom metrics | `increment_metric(name, by)`, `set_metric(name, value)`, `get_metric(name)` |
+| Custom attributes | `put_attribute(name, value)`, `get_attribute`, `remove_attribute`, `attributes` (traces and HTTP metrics) |
+| Custom network request monitoring | `HTTPMetric(url, HTTPMethod)`: `request_payload_size`, `response_code`, `response_payload_size`, `response_content_type` |
+| Disable Performance Monitoring | `data_collection_enabled`, `instrumentation_enabled`; `firebase_performance_collection_enabled` / `firebase_performance_instrumentation_enabled` in `Info.plist` |
+| View data in the console, debug logging | Run the app with `-FIRDebugEnabled` to see what is sent |
+
+The SDK drops a trace, metric or attribute with a bad name quietly (a leading
+`_`, a reserved prefix, too long, a sixth attribute). pyios-firebase raises
+`ValueError` instead. Starting a trace twice, or changing a metric of a trace
+that is not running, raises `RuntimeError`. Making a trace before
+`core.configure()` raises `RuntimeError` (the SDK would abort the app). While
+data collection is off, traces and HTTP metrics are inactive (`active` is
+`False`) and do nothing.
+
+---
+
 ## API reference
 
 ### Firestore
@@ -1654,6 +1698,12 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 - `MessagingError` (`name`), `MessagingErrorCode`, `APNSTokenType`, `MessagingMessageStatus`, `MESSAGING_ERROR_DOMAIN`
 - `notifications`: `request_permission(options, cb)`, `authorization_status(cb)`, `register_for_remote_notifications()`, `set_handlers(on_foreground, on_open, *, default_presentation)`; `Notification` (`identifier`, `title`, `subtitle`, `body`, `badge`, `data`, `category`, `thread_id`, `date`, `message_id`); `AuthorizationOptions`, `AuthorizationStatus`, `PresentationOptions`, `DEFAULT_ACTION`, `DISMISS_ACTION`
 
+### Performance Monitoring
+
+- `Performance.performance()`: `trace(name)`, `start_trace(name)`, `data_collection_enabled`, `instrumentation_enabled`
+- `Trace`: `name`, `start()`, `stop()`, `running`, `active`, `increment_metric(name, by=1)`, `set_metric(name, value)`, `get_metric(name)`, `put_attribute(name, value)`, `get_attribute(name)`, `remove_attribute(name)`, `attributes`; a context manager
+- `HTTPMetric(url, method)`: `start()`, `stop()`, `running`, `active`, `response_code`, `request_payload_size`, `response_payload_size`, `response_content_type`, the attribute methods; a context manager; `HTTPMethod`
+
 ---
 
 ## Good to know
@@ -1705,6 +1755,7 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 | Realtime Database writes never call back | The app is offline: writes wait in the queue, and the callback runs once the server has them. Local listeners already show the write |
 | An Analytics event does not show up | It may take up to a day in reports: use DebugView (`-FIRDebugEnabled`) to see events at once |
 | Crashlytics shows no crash | Crashlytics does not report while the debugger is attached: launch the app from the Home screen, crash, then launch it again to send |
+| Performance traces or HTTP metrics do nothing | `trace.active` is `False`: data collection is off (`data_collection_enabled`, or `firebase_performance_collection_enabled` in `Info.plist`) |
 | No FCM token | On a device: the push capability and an APNs key in the console are needed. FCM does not work in the Simulator |
 | Remote Config values never change | `minimum_fetch_interval` (12 h by default) has not passed, or you fetched but did not `activate` |
 | A query fails with an index error | Open the link in the error message and create the index |
@@ -1825,6 +1876,9 @@ recorded the crash.
 - Messaging: settings, the APNs token, topic checks, delivery analytics, the
   token call, provisional notification permission, and a notification pushed
   to the Simulator (`xcrun simctl push`) arriving in the foreground handler.
+- Performance Monitoring (no emulator exists): traces with metrics and
+  attributes, a Python request measured with `HTTPMetric`, inactive traces
+  while collection is off, and name checks.
 
 It needs Xcode with an iOS simulator, [uv](https://docs.astral.sh/uv/),
 `firebase-tools` and Java 21+ for the emulators. The first run creates a Python

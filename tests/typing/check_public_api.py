@@ -432,3 +432,17 @@ def messaging_usage() -> None:
     notifications.set_handlers(on_foreground=on_foreground)
     notifications.request_permission(AuthorizationOptions.ALERT)
     messaging.subscribe_to_topic(["news"])  # type: ignore[arg-type]
+
+
+def performance_usage() -> None:
+    from pyios_firebase.performance import HTTPMethod, HTTPMetric, Performance, Trace
+
+    with Performance.performance().trace("load_feed") as trace:
+        assert_type(trace, Trace)
+        trace.increment_metric("items", 3)
+        assert_type(trace.get_metric("items"), int)
+    with HTTPMetric("https://example.com", HTTPMethod.POST) as metric:
+        assert_type(metric, HTTPMetric)
+        metric.response_code = 200
+        assert_type(metric.response_content_type, str | None)
+    trace.set_metric("items", "3")  # type: ignore[arg-type]
