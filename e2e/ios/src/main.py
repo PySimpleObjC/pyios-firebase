@@ -1,7 +1,7 @@
 """pyios-firebase end-to-end test app.
 
-Runs the Firestore and Auth suites against the local Firebase emulators
-through the real Firebase iOS SDK, shows the results on screen, prints them (prefix
+Runs the Firestore, Auth, Functions, Storage, Remote Config and App Check
+suites against the local Firebase emulators through the real Firebase iOS SDK, shows the results on screen, prints them (prefix
 ``PYIOS-E2E``), and writes them to ``Documents/pyios-e2e-results.json``.
 
 No GoogleService-Info.plist: Firebase is configured in code for the offline
@@ -21,25 +21,42 @@ from kivy.uix.scrollview import ScrollView
 PROJECT_ID = "demo-pyios-firebase"
 EMULATOR_HOST = os.environ.get("FIRESTORE_EMULATOR_HOST", "127.0.0.1:8080")
 AUTH_EMULATOR_HOST = os.environ.get("FIREBASE_AUTH_EMULATOR_HOST", "127.0.0.1:9099")
+FUNCTIONS_EMULATOR_HOST = "127.0.0.1:5001"
+STORAGE_EMULATOR_HOST = os.environ.get("FIREBASE_STORAGE_EMULATOR_HOST", "127.0.0.1:9199")
+STORAGE_BUCKET = "demo-pyios-firebase.appspot.com"
 RESULTS = os.path.join(os.path.expanduser("~/Documents"), "pyios-e2e-results.json")
 
 
 def configure_firebase() -> None:
+    from app_check_tests import E2EAppCheckProvider
+    from pyios_firebase import app_check
     from pyios_firebase.auth import Auth
     from pyios_firebase.firestore import Firestore
+    from pyios_firebase.functions import Functions
+    from pyios_firebase.storage import Storage
     from pyios_firebase.util import objc_class
+
+    # App Check: a Python custom provider, set before configure as it must be
+    app_check.use_custom_provider(E2EAppCheckProvider.shared())
 
     options = objc_class("FIROptions").alloc().initWithGoogleAppID_GCMSenderID_(
         "1:1234567890:ios:0123456789abcdef", "1234567890"
     )
     options.projectID = PROJECT_ID
-    options.APIKey = "AIzaSyD-emulator-only-not-a-real-key-000"
+    # Firebase Installations (used by Remote Config) checks the format: 39 characters
+    options.APIKey = "AIzaSyD-emulator-only-not-a-real-key-00"
+    options.storageBucket = STORAGE_BUCKET
     objc_class("FIRApp").configureWithOptions_(options)
 
     host, port = EMULATOR_HOST.rsplit(":", 1)
     Firestore.firestore().use_emulator(host, int(port))
     host, port = AUTH_EMULATOR_HOST.rsplit(":", 1)
     Auth.auth().use_emulator(host, int(port))
+    host, port = FUNCTIONS_EMULATOR_HOST.rsplit(":", 1)
+    Functions.functions().use_emulator(host, int(port))
+    Functions.functions("europe-west1").use_emulator(host, int(port))
+    host, port = STORAGE_EMULATOR_HOST.rsplit(":", 1)
+    Storage.storage().use_emulator(host, int(port))
 
 
 class E2EApp(App):
@@ -69,11 +86,18 @@ class E2EApp(App):
             pass
         try:
             configure_firebase()
+            from app_check_tests import TESTS as APP_CHECK_TESTS
             from auth_tests import TESTS as AUTH_TESTS
             from firestore_tests import RUN_ID
             from firestore_tests import TESTS as FIRESTORE_TESTS
+            from functions_tests import TESTS as FUNCTIONS_TESTS
+            from remote_config_tests import TESTS as REMOTE_CONFIG_TESTS
+            from storage_tests import TESTS as STORAGE_TESTS
 
-            TESTS = FIRESTORE_TESTS + AUTH_TESTS
+            TESTS = (
+                FIRESTORE_TESTS + AUTH_TESTS + FUNCTIONS_TESTS + STORAGE_TESTS
+                + REMOTE_CONFIG_TESTS + APP_CHECK_TESTS
+            )
             from runner import Runner, dumps
         except Exception:  # noqa: BLE001
             self.finish({"passed": 0, "failed": 1, "results": [

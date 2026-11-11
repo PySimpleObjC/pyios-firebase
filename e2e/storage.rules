@@ -1,0 +1,10 @@
+rules_version = '2';
+// The e2e suite runs against the Storage emulator only, for the offline demo
+// project: everything is allowed.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}

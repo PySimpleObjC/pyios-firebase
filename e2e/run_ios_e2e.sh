@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # End-to-end tests: pyios-firebase in the iOS Simulator, through the real
-# Firebase iOS SDK, against the local Firestore and Auth emulators.
+# Firebase iOS SDK, against the local Firestore, Auth, Functions and Storage
+# emulators (plus Remote Config and App Check, which need no emulator).
 #
 #   e2e/run_ios_e2e.sh
 #
-# Needs: Xcode with an iOS simulator, uv, firebase-tools (npm i -g firebase-tools),
-# and Java 21+ for the emulator (JAVA_HOME, or any JDK java_home can find).
+# Needs: Xcode with an iOS simulator, uv (also builds the Python functions'
+# venv), firebase-tools, and Java 21+ for the emulators
+# (JAVA_HOME, or any JDK java_home can find).
 #
 # Environment:
 #   E2E_DEVICE   simulator name (default "iPhone 17")
@@ -25,6 +27,10 @@ PROJECT_ID="demo-pyios-firebase"
 BUNDLE_ID="io.github.pysimpleobjc.pyiosfirebase.e2e"
 EMULATOR="127.0.0.1:8080"
 AUTH_EMULATOR="127.0.0.1:9099"
+FUNCTIONS_EMULATOR="127.0.0.1:5001"
+STORAGE_EMULATOR="127.0.0.1:9199"
+# a fixed App Check debug token, passed to the app as FIRAAppCheckDebugToken
+APP_CHECK_DEBUG_TOKEN="00000000-e2e0-4000-8000-000000000000"
 RESULTS_NAME="pyios-e2e-results.json"
 # the kivyforge commit the build is known to work with
 KIVYFORGE="git+https://github.com/ElliotGarbus/kivyforge.git@758dc40e6e7f3c430f06f5f25c98023882926e28"
@@ -78,18 +84,25 @@ pick_java() {
   die "the Firestore emulator needs Java 21+ (set JAVA_HOME, or: brew install openjdk)"
 }
 
-# ---- 2. the emulator ----------------------------------------------------------
-if curl -fs "http://$EMULATOR/" >/dev/null 2>&1 && curl -fs "http://$AUTH_EMULATOR/" >/dev/null 2>&1; then
-  say "reusing the emulators already on $EMULATOR (Firestore) and $AUTH_EMULATOR (Auth)"
+# ---- 2. the emulators ---------------------------------------------------------
+listening() { curl -s -o /dev/null --max-time 2 "http://$1/"; }
+if [[ ! -x "$HERE/functions/venv/bin/python" ]]; then
+  # the emulator runs Python functions from functions/venv (runtime python313)
+  say "creating the e2e functions' venv"
+  (cd "$HERE/functions" && uv venv --quiet --python 3.13 venv \
+     && uv pip install --quiet --python venv/bin/python -r requirements.txt)
+fi
+if listening "$EMULATOR" && listening "$AUTH_EMULATOR" && listening "$FUNCTIONS_EMULATOR" && listening "$STORAGE_EMULATOR"; then
+  say "reusing the emulators already running (Firestore, Auth, Functions, Storage)"
 else
   command -v firebase >/dev/null || die "firebase-tools not found (npm i -g firebase-tools)"
   JAVA="$(pick_java)"
-  say "starting the Firestore and Auth emulators (Java: $JAVA)"
+  say "starting the Firestore, Auth, Functions and Storage emulators (Java: $JAVA)"
   # job control on: the emulator gets its own process group (PGID = its PID),
   # so cleanup can stop exactly what was started here
   set -m
   (cd "$HERE" && JAVA_HOME="$JAVA" PATH="$JAVA/bin:$PATH" \
-     firebase emulators:start --only firestore,auth --project "$PROJECT_ID" --config firebase.json \
+     firebase emulators:start --only firestore,auth,functions,storage --project "$PROJECT_ID" --config firebase.json \
      >"$LOGS/emulator.log" 2>&1) &
   EMULATOR_PID=$!
   set +m
@@ -131,7 +144,9 @@ DEVICE_UDID="$(device_udid)"
 if old="$(results_path)"; then rm -f "$old"; fi
 
 say "building and launching on $DEVICE ($DEVICE_UDID) — the first build takes a few minutes"
-kivyforge run -p ios --simulator --destination "$DEVICE_UDID" >"$LOGS/app.log" 2>&1 &
+# simctl hands SIMCTL_CHILD_* variables to the launched app, without the prefix
+SIMCTL_CHILD_FIRAAppCheckDebugToken="$APP_CHECK_DEBUG_TOKEN" \
+  kivyforge run -p ios --simulator --destination "$DEVICE_UDID" >"$LOGS/app.log" 2>&1 &
 APP_PID=$!
 
 # ---- 4. wait for the results ---------------------------------------------------

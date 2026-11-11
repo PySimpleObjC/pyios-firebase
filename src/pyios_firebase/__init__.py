@@ -8,8 +8,10 @@ needs its Firebase framework in the app.
 - ``pyios_firebase.firestore``: Cloud Firestore
 - ``pyios_firebase.types``: types for your own annotations
 
-App Check is still the 0.1 module ``firappcheck`` until it moves to its
-own subpackage.
+- ``pyios_firebase.app_check``: App Check providers and tokens
+- ``pyios_firebase.functions``: Cloud Functions (HTTPS callables)
+- ``pyios_firebase.remote_config``: Remote Config
+- ``pyios_firebase.storage``: Cloud Storage
 """
 
 from .core import configure

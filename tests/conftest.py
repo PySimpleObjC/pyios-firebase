@@ -75,6 +75,7 @@ from rubicon.objc import (
     NSObject,
     objc_classmethod,
     objc_id,
+    objc_method,
     objc_property,
 )
 
@@ -100,3 +101,17 @@ class FIRTimestamp(NSObject):
 
 class FIRDocumentReference(NSObject):
     path = objc_property()
+
+
+class FIRAppCheckToken(NSObject):
+    """Stands in for the SDK's ``FIRAppCheckToken``."""
+
+    token = objc_property()
+    expirationDate = objc_property()
+
+    @objc_method
+    def initWithToken_expirationDate_(self, token, expiration_date) -> objc_id:
+        self.token = token
+        self.expirationDate = expiration_date
+        _alive.append(self)
+        return self

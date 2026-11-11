@@ -210,3 +210,112 @@ def auth_mistakes() -> None:
     # profile fields are keyword-only
     User().update_profile(None, "Ada")  # type: ignore[call-arg]
     ActionCodeSettings(url=42)  # type: ignore[arg-type]
+
+
+def functions_usage() -> None:
+    from pyios_firebase.functions import Functions, FunctionsError, HTTPSCallable
+
+    callable_ = Functions.functions("europe-west1").https_callable("addMessage")
+    assert_type(callable_, HTTPSCallable)
+    callable_.timeout_interval = 30
+
+    def on_result(data: Any, error: FunctionsError | None) -> None:
+        if error is not None:
+            assert_type(error.name, str)
+            assert_type(error.details, Any)
+
+    callable_.call(on_result, {"text": "hi"})
+    Functions.functions().https_callable(
+        "f", require_limited_use_app_check_tokens=True
+    ).call(on_result)
+    callable_.call(on_result, data=None, extra=1)  # type: ignore[call-arg]
+
+
+def remote_config_usage() -> None:
+    from pyios_firebase.remote_config import (
+        ConfigUpdate,
+        FetchStatus,
+        RemoteConfig,
+        RemoteConfigSource,
+        RemoteConfigValue,
+    )
+
+    def on_fetched(status: FetchStatus, error: FirebaseError | None) -> None:
+        if status == "error":
+            pass
+
+    config = RemoteConfig.setup(defaults={"a": 1}, callback=on_fetched)
+    assert_type(config.get_string("a"), str)
+    assert_type(config.get_boolean("a"), bool)
+    assert_type(
+        config.get_value("a", source=RemoteConfigSource.DEFAULT), RemoteConfigValue
+    )
+    assert_type(config.keys_with_prefix("ui_"), set[str])
+
+    def on_update(update: ConfigUpdate | None, error: FirebaseError | None) -> None:
+        if update is not None:
+            assert_type(update.updated_keys, frozenset[str])
+            config.activate()
+
+    config.add_on_config_update_listener(on_update).remove()
+    config.set_custom_signals({"flag": [1]})  # type: ignore[dict-item]
+
+
+def storage_usage() -> None:
+    from pyios_firebase.storage import (
+        Storage,
+        StorageError,
+        StorageListResult,
+        StorageMetadata,
+        StorageTaskSnapshot,
+        StorageTaskStatus,
+        StorageUploadTask,
+    )
+
+    ref = Storage.storage().reference().child("a/b.jpg")
+
+    def on_uploaded(
+        metadata: StorageMetadata | None, error: StorageError | None
+    ) -> None:
+        if metadata is not None:
+            assert_type(metadata.size, int)
+            assert_type(metadata.custom_metadata, dict[str, str])
+
+    task = ref.put_data(
+        b"x",
+        "text/plain",
+        callback=on_uploaded,
+        metadata=StorageMetadata(cache_control="no-cache"),
+    )
+    assert_type(task, StorageUploadTask)
+
+    def on_progress(snapshot: StorageTaskSnapshot) -> None:
+        assert_type(snapshot.fraction_completed, float)
+
+    task.observe(StorageTaskStatus.PROGRESS, on_progress)
+
+    def on_list(result: StorageListResult | None, error: StorageError | None) -> None:
+        if result is not None:
+            assert_type(result.page_token, str | None)
+
+    ref.list(10, on_list)
+    ref.put_data("not bytes")  # type: ignore[arg-type]
+
+
+def app_check_usage() -> None:
+    from pyios_firebase import app_check
+    from pyios_firebase.app_check import AppCheck, AppCheckProvider, AppCheckToken
+
+    class MyProvider(AppCheckProvider):
+        def get_token(self, callback: app_check.TokenCallback) -> None:
+            callback(AppCheckToken("t", datetime.now(UTC)), None)
+
+    app_check.use_custom_provider(MyProvider())
+
+    def on_token(token: AppCheckToken | None, error: FirebaseError | None) -> None:
+        if token is not None:
+            assert_type(token.expiration_date, datetime)
+
+    AppCheck.app_check().token(on_token, force_refresh=True)
+    AppCheck.app_check().add_token_listener(lambda token: None).remove()
+    app_check.use_recaptcha_provider(42)  # type: ignore[arg-type]

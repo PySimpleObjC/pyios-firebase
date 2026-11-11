@@ -28,12 +28,16 @@ db.collection_with_path("cities").document_with_path("SF")
 7. [How callbacks work](#how-callbacks-work)
 8. [Cloud Firestore](#cloud-firestore)
 9. [Authentication](#authentication)
-10. [API reference](#api-reference)
-11. [Good to know](#good-to-know)
-12. [Troubleshooting](#troubleshooting)
-13. [Migrating](#migrating)
-14. [Development](#development)
-15. [Licenses](#licenses)
+10. [Cloud Functions](#cloud-functions)
+11. [Cloud Storage](#cloud-storage)
+12. [Remote Config](#remote-config)
+13. [App Check](#app-check)
+14. [API reference](#api-reference)
+15. [Good to know](#good-to-know)
+16. [Troubleshooting](#troubleshooting)
+17. [Migrating](#migrating)
+18. [Development](#development)
+19. [Licenses](#licenses)
 
 ---
 
@@ -63,8 +67,18 @@ db.collection_with_path("cities").document_with_path("SF")
   - Linking and unlinking providers, re-authentication, anonymous upgrade
   - Typed errors (`AuthError`, `AuthErrorCode`)
   - The local Auth emulator, for development and tests
-- **App Check** debug provider: still the 0.1 module `firappcheck`; it moves to
-  its own subpackage in a later release
+- **Cloud Functions**: callables by name, URL, region or custom domain; JSON data in
+  and out; error codes and `details`; timeouts; limited-use App Check tokens; the
+  emulator
+- **Cloud Storage**: upload (bytes or files) and download (memory or file) with
+  progress, pause, resume and cancel; metadata and custom metadata; listing with
+  pages; download URLs; several buckets; retry settings; the emulator
+- **Remote Config**: in-app defaults (plist, dict, Android XML); fetch, activate,
+  fetch-and-activate; typed values with their source; real-time updates; custom
+  signals
+- **App Check**: DeviceCheck, App Attest, reCAPTCHA, the debug provider (with a CI
+  token), custom providers written in Python; tokens, limited-use tokens, token
+  listeners
 - Pure Python. No `.m` or `.h` files.
 - Callback blocks are kept alive for you, so they are not deleted too early.
 - Each product is its own subpackage. You only need the Firebase frameworks of
@@ -85,8 +99,11 @@ db.collection_with_path("cities").document_with_path("SF")
   |---|---|
   | `core` | `FirebaseCore` (always) |
   | `firestore` | `FirebaseFirestore` |
-  | `firappcheck` | `FirebaseAppCheck` |
-  | `auth` | `FirebaseAuth` (+ `GoogleSignIn` for `auth.google`) |
+  | `auth` | `FirebaseAuth` (+ `GoogleSignIn` for `auth.google`, `FacebookLogin` for `auth.facebook`) |
+  | `functions` | `FirebaseFunctions` |
+  | `storage` | `FirebaseStorage` |
+  | `remote_config` | `FirebaseRemoteConfig` |
+  | `app_check` | `FirebaseAppCheck` |
 
 - A `GoogleService-Info.plist` file from your Firebase project, added to the app
 
@@ -119,8 +136,13 @@ pyios_firebase/
 │                        Transaction, FieldValue, Filter, aggregates, enums
 ├── auth/                Auth, User, credentials and providers, AuthError
 │   ├── google.py        start_google_sign_in(), get_google_credential()
-│   └── apple.py         start_apple_sign_in(), get_apple_credential()
-└── firappcheck.py       initialize_debug_appcheck()          (0.1 module)
+│   ├── apple.py         start_apple_sign_in(), get_apple_credential()
+│   ├── facebook.py      start_facebook_sign_in(), get_facebook_credential()
+│   └── multi_factor.py  SMS and TOTP second factors
+├── functions/           Functions, HTTPSCallable, FunctionsError
+├── storage/             Storage, StorageReference, StorageMetadata, tasks, errors
+├── remote_config/       RemoteConfig, RemoteConfigValue, ConfigUpdate
+└── app_check/           providers, AppCheck, AppCheckToken, AppCheckProvider
 ```
 
 Import from the subpackage:
@@ -185,15 +207,15 @@ from pyios_firebase import core
 core.configure()
 ```
 
-### 4. (Optional) App Check debug provider
+### 4. (Optional) App Check
 
-For testing, you can use the App Check debug provider. It must be set **before**
-`core.configure()`:
+Choose the App Check provider **before** `core.configure()` (see [App Check](#app-check)).
+For testing, use the debug provider:
 
 ```python
-from pyios_firebase import core, firappcheck
+from pyios_firebase import app_check, core
 
-firappcheck.initialize_debug_appcheck()
+app_check.use_debug_provider()     # or use_app_attest_provider() / use_device_check_provider()
 core.configure()
 ```
 
@@ -280,6 +302,11 @@ Firebase calls your code later, when the server answers. So most methods take a
 | Auth sign-in, link, re-authenticate, Google / Apple sheets | `(auth_data_result, error)` |
 | Auth writes (`send_password_reset`, `reload`, `delete`, `update_*`) | `(error)` |
 | `add_state_did_change_listener` | `(user)` (`None` when signed out) |
+| `HTTPSCallable.call` | `(data, error)` |
+| Storage uploads / `get_metadata` / `update_metadata` | `(storage_metadata, error)` |
+| `get_data`, `download_url`, `write_to_file`, `list` | `(bytes / url / path / list_result, error)` |
+| `RemoteConfig.fetch_and_activate` / `fetch` / `activate` | `(status, error)` / `(status, error)` / `(changed, error)` |
+| `AppCheck.token` / `limited_use_token` | `(app_check_token, error)` |
 
 The rules are the same everywhere:
 
@@ -966,6 +993,171 @@ APNs or reCAPTCHA. Its REST API shows the emails and SMS codes it "sent"
 
 ---
 
+## Cloud Functions
+
+```python
+from pyios_firebase.functions import Functions, FunctionsErrorCode
+
+
+def on_result(data, error):
+    if error is not None:
+        if error.code == FunctionsErrorCode.INVALID_ARGUMENT:
+            print("Bad input:", error.description, error.details)
+        return
+    print("The function returned:", data)
+
+
+add_message = Functions.functions().https_callable("addMessage")
+add_message.timeout_interval = 30
+add_message.call(on_result, {"text": "Hello", "tags": ["a", "b"]})
+```
+
+- `data` goes as JSON: dicts, lists, tuples, strings, numbers, bools and `None`.
+  Anything else (a `datetime`, a `set`, `nan`, `inf`) raises `TypeError` before
+  anything is sent. Ints go as plain JSON numbers, so Python and Node.js functions
+  both get an `int`. Only ints beyond ±2^53 use the SDK's `Int64Value` wrapper,
+  which keeps them exact; the Python Functions SDK does not unwrap it.
+- `error` is a `FunctionsError`: `code` (`FunctionsErrorCode`), `name`, `description`
+  and `details` (what the function put in its `HttpsError`). An unexpected error in
+  the function is `INTERNAL`, without its message.
+- The signed-in user's ID token and the App Check token are sent for you.
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Call functions from your app | `Functions.functions(region)`, `https_callable(name)`, `call(callback, data)` |
+| Handle errors | `FunctionsError`, `FunctionsErrorCode`, `error.details` |
+| Call functions via URL / custom domain | `https_callable_from_url(url)`, `Functions.functions(custom_domain=...)` |
+| Enforce App Check / replay protection | sent automatically; `https_callable(name, require_limited_use_app_check_tokens=True)` |
+| Timeouts | `HTTPSCallable.timeout_interval` |
+| Connect to the emulator | `Functions.functions().use_emulator("127.0.0.1", 5001)` (per region) |
+| Streaming callables | Not available: `stream()` is Swift-only in the Firebase SDK |
+
+---
+
+## Cloud Storage
+
+```python
+from pyios_firebase.storage import Storage, StorageMetadata, StorageTaskStatus
+
+ref = Storage.storage().reference().child(f"users/{uid}/avatar.jpg")
+
+metadata = StorageMetadata(content_type="image/jpeg", custom_metadata={"owner": uid})
+task = ref.put_file("/path/to/avatar.jpg", callback=on_uploaded, metadata=metadata)
+task.observe(StorageTaskStatus.PROGRESS, lambda s: print(f"{s.fraction_completed:.0%}"))
+# task.pause() / task.resume() / task.cancel()
+
+ref.get_data(5 * 1024 * 1024, lambda data, error: ...)         # into memory
+ref.write_to_file("/path/to/local.jpg", lambda path, error: ...)  # large files
+ref.download_url(lambda url, error: ...)
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Create a reference | `Storage.storage()`, `reference()`, `child(path)`, `parent()`, `root()`, `reference_with_path`, `reference_for_url` |
+| Upload files | `put_data(bytes)`, `put_file(path)`, with `metadata=`; the returned `StorageUploadTask` |
+| Download files | `get_data(max_size)`, `write_to_file(path)`, `download_url()` |
+| Use file metadata | `get_metadata`, `update_metadata` (set a field to `None` to delete it), `StorageMetadata` |
+| Delete files | `delete()` |
+| List files | `list_all()`, `list(max_results, page_token=)` → `StorageListResult` |
+| Monitor, pause, resume, cancel | `task.observe(status, handler)`, `remove_observer`, `pause`, `resume`, `cancel`, `task.snapshot` |
+| Handle errors | `StorageError` (`name`), `StorageErrorCode` |
+| Use multiple buckets | `Storage.storage("gs://other-bucket")` |
+| Retry settings | `max_upload_retry_time`, `max_download_retry_time`, `max_operation_retry_time` |
+| Connect to the emulator | `Storage.storage().use_emulator("127.0.0.1", 9199)` |
+
+---
+
+## Remote Config
+
+```python
+from pyios_firebase.remote_config import RemoteConfig
+
+config = RemoteConfig.setup(defaults_plist="RemoteConfigDefaults", minimum_fetch_interval=3600)
+config.get_string("welcome_message")
+config.get_boolean("new_checkout")
+
+
+def on_update(update, error):            # real-time: published values arrive within seconds
+    if update is not None and "welcome_message" in update.updated_keys:
+        config.activate(lambda changed, error: refresh_screen())
+
+
+listener = config.add_on_config_update_listener(on_update)
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Get started: defaults | `setup(defaults=, defaults_plist=, defaults_file=)`, `set_defaults`, `set_defaults_from_plist`, `default_value` |
+| Get values | `get_string`, `get_boolean`, `get_number`, `get_long`, `get_json`, `get_data`, `get_value(key, source=)` |
+| Fetch and activate | `fetch_and_activate`, `fetch(expiration_duration=)`, `activate`, `ensure_initialized`, `last_fetch_time`, `last_fetch_status` |
+| Throttling | `minimum_fetch_interval`, `fetch_timeout`, `RemoteConfigFetchStatus.THROTTLED` |
+| Real-time updates | `add_on_config_update_listener` → `ConfigUpdate.updated_keys`; `.remove()` |
+| Custom signal conditions | `set_custom_signals({...})` |
+| Keys and sources | `all_keys(source)`, `keys_with_prefix`, `RemoteConfigSource` |
+| A/B Testing, personalization, rollouts | Set up in the console; the app only reads values |
+
+Remote Config has no emulator. Lower `minimum_fetch_interval` only while developing:
+Firebase throttles apps that fetch too often.
+
+---
+
+## App Check
+
+Choose the provider **before** `core.configure()`:
+
+```python
+from pyios_firebase import app_check, core
+
+if app_check.running_in_simulator():
+    app_check.use_debug_provider()       # prints a debug token to register in the console
+else:
+    app_check.use_app_attest_provider()  # or use_device_check_provider(), use_recaptcha_provider(key)
+core.configure()
+```
+
+Firestore, Functions, Storage, Auth and Remote Config then send App Check tokens by
+themselves. For your own backend:
+
+```python
+from pyios_firebase.app_check import AppCheck
+
+AppCheck.app_check().token(lambda token, error: call_backend(token.token))
+AppCheck.app_check().limited_use_token(on_token)         # for replay protection
+listener = AppCheck.app_check().add_token_listener(lambda token: ...)
+```
+
+A custom provider, written in Python:
+
+```python
+from pyios_firebase.app_check import AppCheckProvider, AppCheckToken
+
+
+class MyProvider(AppCheckProvider):
+    def get_token(self, callback):
+        my_attestation_service.fetch(
+            lambda token, expires: callback(AppCheckToken(token, expires), None),
+            lambda message: callback(None, message),
+        )
+
+
+app_check.use_custom_provider(MyProvider())
+```
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Get started with App Attest / DeviceCheck | `use_app_attest_provider()`, `use_device_check_provider()` |
+| reCAPTCHA Enterprise | `use_recaptcha_provider(site_key)` (needs the reCAPTCHA SDK) |
+| Use the debug provider | `use_debug_provider()`, `AppCheck.debug_token()`; CI: the `FIRAAppCheckDebugToken` environment variable |
+| Implement a custom provider | `AppCheckProvider` + `use_custom_provider(provider or factory)` |
+| Protect your own backend | `AppCheck.token(...)`, `limited_use_token(...)`, `add_token_listener` |
+| Replay protection | `limited_use_token`; Functions: `require_limited_use_app_check_tokens=True` |
+| Token auto-refresh | `is_token_auto_refresh_enabled` |
+
+Setting a provider after `core.configure()` raises `RuntimeError`: Firebase only
+reads it when the app is configured. The emulators do not check App Check tokens.
+
+---
+
 ## API reference
 
 ### Firestore
@@ -1198,6 +1390,39 @@ Each has a `PROVIDER_ID`. `AuthDataResult` has `user`, `additional_user_info`
 by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 `ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL`, ...).
 
+### Functions
+
+- `Functions.functions(region=None, custom_domain=None)`, `use_emulator(host, port)`
+- `https_callable(name, require_limited_use_app_check_tokens=False)`, `https_callable_from_url(url, ...)`
+- `HTTPSCallable.call(callback, data=None)`, `timeout_interval`
+- `FunctionsError` (`code`, `name`, `description`, `details`), `FunctionsErrorCode`
+
+### Storage
+
+- `Storage.storage(url=None)`: `reference()`, `reference_with_path(path)`, `reference_for_url(url)`, `use_emulator(host, port)`, `max_upload_retry_time`, `max_download_retry_time`, `max_operation_retry_time`
+- `StorageReference`: `full_path`, `name`, `bucket`, `gs_url`, `storage`, `root()`, `parent()`, `child(path)`; `put_data(data, content_type, callback, *, metadata)`, `put_file(path, ...)` → `StorageUploadTask`; `get_data(max_size, cb)`, `write_to_file(path, cb)` → `StorageDownloadTask`; `download_url(cb)`, `get_metadata(cb)`, `update_metadata(metadata, cb)`, `list_all(cb)`, `list(max_results, cb, page_token)`, `delete(cb)`
+- `StorageMetadata(content_type, cache_control, content_disposition, content_encoding, content_language, custom_metadata)`; read-only `bucket`, `path`, `name`, `size`, `md5_hash`, `generation`, `metageneration`, `time_created`, `updated`, `is_file`, `gs_url`
+- `StorageTask` (`StorageUploadTask`, `StorageDownloadTask`): `observe(status, handler)`, `remove_observer(handle)`, `pause()`, `resume()`, `cancel()`, `snapshot`
+- `StorageTaskSnapshot`: `status`, `bytes_transferred`, `total_bytes`, `fraction_completed`, `metadata`, `error`, `reference`; `StorageTaskStatus`
+- `StorageListResult` (`items`, `prefixes`, `page_token`), `StorageError` (`name`), `StorageErrorCode`
+
+### Remote Config
+
+- `RemoteConfig.remote_config()`, `RemoteConfig.setup(defaults, defaults_file, defaults_plist, minimum_fetch_interval, callback)`
+- Settings: `minimum_fetch_interval`, `fetch_timeout`, `last_fetch_time`, `last_fetch_status`
+- Defaults: `set_defaults(dict)`, `set_defaults_from_plist(name)`, `default_value(key)`, `load_defaults(path)`, `load_plist_defaults(name)`
+- Fetch: `ensure_initialized(cb)`, `fetch(cb, expiration_duration)`, `activate(cb)`, `fetch_and_activate(cb)`
+- Values: `get_value(key, source)` → `RemoteConfigValue` (`string`, `number`, `boolean`, `data`, `source`, `json()`); `get_string`, `get_boolean`, `get_number`, `get_long`, `get_data`, `get_json`; `all_keys(source)`, `keys_with_prefix(prefix)`
+- Real-time: `add_on_config_update_listener(listener)` → `ConfigUpdateListener` (`remove()`); `ConfigUpdate.updated_keys`
+- `set_custom_signals(signals, cb)`; `RemoteConfigSource`, `RemoteConfigFetchStatus`, `RemoteConfigErrorCode`
+
+### App Check
+
+- Providers (before `core.configure()`): `use_debug_provider()`, `use_device_check_provider()`, `use_app_attest_provider()`, `use_recaptcha_provider(site_key)`, `use_custom_provider(provider)`; `running_in_simulator()`; `initialize_debug_appcheck()` (0.1 name)
+- `AppCheckProvider` (`get_token(callback)`, `get_limited_use_token(callback)`), `AppCheckToken(token, expiration_date)`
+- `AppCheck.app_check()`: `token(cb, force_refresh)`, `limited_use_token(cb)`, `add_token_listener(listener)` → `AppCheckTokenListener`, `is_token_auto_refresh_enabled`, `debug_token()`
+- `AppCheckErrorCode`, `DEBUG_TOKEN_ENVIRONMENT_VARIABLE`
+
 ---
 
 ## Good to know
@@ -1241,7 +1466,11 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 | The app stops with "Please register custom URL scheme" | Phone or web sign-in without the callback URL scheme in `Info.plist`. Use pyios-firebase's methods: they give an `AuthError` naming the scheme instead |
 | `NOT_FOUND` / `INVALID_CREDENTIAL` on sign-in with the emulator | The emulator starts empty each run: create the account first |
 | `core.default_app()` is `None` | `core.configure()` was not called, or it was called too late |
-| App Check blocks requests | Call `initialize_debug_appcheck()` **before** `core.configure()`, and add the debug token in the Firebase console |
+| App Check blocks requests | Choose the provider **before** `core.configure()` (after it, the `use_*` functions raise `RuntimeError`), and register the debug token in the Firebase console |
+| A function call fails with `INTERNAL` | The function threw an unexpected error: check its logs (the message is not sent to the app) |
+| Storage `UNAUTHORIZED` / `UNAUTHENTICATED` | The Storage security rules do not allow it, or need a signed-in user |
+| With the Storage emulator, `get_metadata` still finds a deleted file | The emulator sends the file's own `Cache-Control` on metadata responses, so iOS caches them. Use a non-cacheable `cache_control` (for example `"no-cache"`) on emulator test files |
+| Remote Config values never change | `minimum_fetch_interval` (12 h by default) has not passed, or you fetched but did not `activate` |
 | A query fails with an index error | Open the link in the error message and create the index |
 | `snapshot.data` has odd types | Some Firestore values stay Objective-C objects (see [Python values and Firestore types](#python-values-and-firestore-types)). Open an issue and tell us the Rubicon version and what `type(...)` prints |
 
@@ -1251,7 +1480,7 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 
 ### From the flat 0.1 modules
 
-Firebase Core, Auth and Firestore are now subpackages:
+Every product is now a subpackage:
 
 | Before | Now |
 |---|---|
@@ -1259,7 +1488,7 @@ Firebase Core, Auth and Firestore are now subpackages:
 | `pyios_firebase.firfirestore`, `firfieldvalue`, `firfilter` | `pyios_firebase.firestore` |
 | `pyios_firebase.firuser.User` | `pyios_firebase.auth.User` (also `Auth.auth().current_user`) |
 | `pyios_firebase.firgoogleauth` | `pyios_firebase.auth.google` |
-| `pyios_firebase.firappcheck` | unchanged in this release |
+| `pyios_firebase.firappcheck.initialize_debug_appcheck()` | `pyios_firebase.app_check.use_debug_provider()` (the old name still works) |
 
 Auth changes:
 
@@ -1318,7 +1547,8 @@ e2e/run_ios_e2e.sh
 
 This builds a small Kivy app (`e2e/ios/`) with the wheel from your checkout and
 the real Firebase iOS SDK, runs it in the iOS Simulator against the local
-Firestore and Auth emulators, and exits non-zero if any test fails.
+Firestore, Auth, Functions and Storage emulators, and exits non-zero if any test
+fails.
 
 - Firestore: every value type, writes and field values, merges, queries and
   cursors, OR/AND filters, collection groups, aggregates, listeners and their
@@ -1331,9 +1561,23 @@ Firestore and Auth emulators, and exits non-zero if any test fails.
   shared keychain, OAuth providers, and the Facebook SDK bridge. The emails and
   SMS codes are read from the Auth emulator's REST API. TOTP is skipped: the Auth
   emulator supports only SMS second factors.
+- Functions: JSON round trip, `HttpsError` codes and details, unexpected errors,
+  unknown functions, timeouts, the Auth context, regions, calls by URL, App
+  Check tokens (normal and limited-use), and non-JSON data. The functions are
+  Python Cloud Functions (`firebase_functions`) in `e2e/functions/main.py`.
+- Storage: references, upload with metadata, metadata update and delete, download
+  URL, download to memory and to a file, file upload, listing and paging, upload
+  progress, cancel, and errors.
+- Remote Config (no emulator exists): plist defaults, values and their sources,
+  merged defaults, settings, a fetch failing cleanly offline, custom signals and
+  the update listener.
+- App Check: a Python custom provider serving the whole app, tokens and
+  limited-use tokens, the token listener, settings, and the debug token from
+  `FIRAAppCheckDebugToken`.
 
 It needs Xcode with an iOS simulator, [uv](https://docs.astral.sh/uv/),
-`firebase-tools` (`npm i -g firebase-tools`) and Java 21+ for the emulator. It
+`firebase-tools` and Java 21+ for the emulators. The first run creates a Python
+3.13 venv for the e2e functions with uv. It
 uses the offline `demo-pyios-firebase` project: no Firebase account or
 credentials. `E2E_DEVICE` picks the simulator (default `iPhone 17`). The first
 build takes a few minutes; results, the app log and a screenshot land in
