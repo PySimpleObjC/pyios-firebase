@@ -58,6 +58,7 @@ Package Manager, and choose the products you use:
 | `crashlytics` | `FirebaseCrashlytics` | The dSYM upload run script |
 | `messaging` | `FirebaseMessaging` | The Push Notifications capability, an APNs key in the console |
 | `performance` | `FirebasePerformance` | |
+| `in_app_messaging` | `FirebaseInAppMessaging-Beta` | `FirebaseAnalytics`, for Analytics event triggers and statistics |
 
 The app must also link with **`-ObjC`** (`OTHER_LDFLAGS`): the Firebase
 packages are static libraries, and without the flag the linker drops the
@@ -143,6 +144,7 @@ pyios_firebase/
 │   └── multi_factor.py  SMS and TOTP second factors
 ├── database/            Database, DatabaseReference, DatabaseQuery, DataSnapshot...
 ├── functions/           Functions, HTTPSCallable, FunctionsError
+├── in_app_messaging/    InAppMessaging, the message classes, DisplayDelegate
 ├── storage/             Storage, StorageReference, StorageMetadata, tasks
 ├── remote_config/       RemoteConfig, RemoteConfigValue, ConfigUpdate
 ├── app_check/           providers, AppCheck, AppCheckToken, AppCheckProvider

@@ -446,3 +446,42 @@ def performance_usage() -> None:
         metric.response_code = 200
         assert_type(metric.response_content_type, str | None)
     trace.set_metric("items", "3")  # type: ignore[arg-type]
+
+
+def in_app_messaging_usage() -> None:
+    from pyios_firebase.in_app_messaging import (
+        Action,
+        DismissType,
+        DisplayDelegate,
+        InAppMessage,
+        InAppMessaging,
+        InAppMessagingError,
+        ModalMessage,
+    )
+
+    iam = InAppMessaging.in_app_messaging()
+    iam.message_display_suppressed = True
+    assert_type(iam.automatic_data_collection_enabled, bool)
+    iam.trigger_event("level_done")
+
+    def on_click(message: InAppMessage, action: Action) -> None:
+        assert_type(message.app_data, dict[str, Any])
+        assert_type(action.url, str | None)
+
+    def on_error(message: InAppMessage, error: InAppMessagingError) -> None:
+        assert_type(error.name, str)
+
+    remove = iam.add_click_listener(on_click)
+    remove()
+    iam.add_error_listener(on_error)
+    iam.add_dismiss_listener(lambda message, kind: None)
+
+    def show(message: InAppMessage, delegate: DisplayDelegate) -> None:
+        if isinstance(message, ModalMessage):
+            assert_type(message.text_color, str | None)
+        delegate.impression()
+        delegate.dismissed(DismissType.USER_TAP_CLOSE)
+
+    iam.set_display(show)
+    iam.use_default_display()
+    iam.trigger_event(3)  # type: ignore[arg-type]

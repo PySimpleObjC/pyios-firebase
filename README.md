@@ -39,12 +39,13 @@ db.collection_with_path("cities").document_with_path("SF")
 16. [Crashlytics](#crashlytics)
 17. [Cloud Messaging](#cloud-messaging)
 18. [Performance Monitoring](#performance-monitoring)
-19. [API reference](#api-reference)
-20. [Good to know](#good-to-know)
-21. [Troubleshooting](#troubleshooting)
-22. [Migrating](#migrating)
-23. [Development](#development)
-24. [Licenses](#licenses)
+19. [In-App Messaging](#in-app-messaging)
+20. [API reference](#api-reference)
+21. [Good to know](#good-to-know)
+22. [Troubleshooting](#troubleshooting)
+23. [Migrating](#migrating)
+24. [Development](#development)
+25. [Licenses](#licenses)
 
 ---
 
@@ -104,6 +105,10 @@ db.collection_with_path("cities").document_with_path("SF")
 - **Performance Monitoring**: custom code traces with metrics and attributes
   (`with` blocks), HTTP metrics for requests made from Python, data collection
   and instrumentation settings; names checked before they are dropped
+- **In-App Messaging**: Firebase's in-app messages with their impression,
+  click, dismiss and error listeners; typed messages (modal, banner, card,
+  image); event triggers, suppressing messages, data collection; showing
+  the messages with your own UI (a Kivy popup) instead of Firebase's screens
 - Pure Python. No `.m` or `.h` files.
 - Callback blocks are kept alive for you, so they are not deleted too early.
 - Each product is its own subpackage. You only need the Firebase frameworks of
@@ -134,6 +139,7 @@ db.collection_with_path("cities").document_with_path("SF")
   | `crashlytics` | `FirebaseCrashlytics` (+ the dSYM upload run script) |
   | `messaging` | `FirebaseMessaging` (+ the Push Notifications capability) |
   | `performance` | `FirebasePerformance` |
+  | `in_app_messaging` | `FirebaseInAppMessaging-Beta` (+ `FirebaseAnalytics` for event triggers and statistics) |
 
 - A `GoogleService-Info.plist` file from your Firebase project, added to the app
 
@@ -172,6 +178,8 @@ pyios_firebase/
 ├── database/            Database, DatabaseReference, DatabaseQuery, DataSnapshot,
 │                        MutableData, TransactionResult, ServerValue, errors
 ├── functions/           Functions, HTTPSCallable, FunctionsError
+├── in_app_messaging/    InAppMessaging, ModalMessage, BannerMessage, CardMessage,
+│                        ImageOnlyMessage, Action, DisplayDelegate
 ├── storage/             Storage, StorageReference, StorageMetadata, tasks, errors
 ├── remote_config/       RemoteConfig, RemoteConfigValue, ConfigUpdate
 ├── app_check/           providers, AppCheck, AppCheckToken, AppCheckProvider
@@ -1425,6 +1433,67 @@ data collection is off, traces and HTTP metrics are inactive (`active` is
 
 ---
 
+## In-App Messaging
+
+Not Cloud Messaging: these messages are made as campaigns in the console
+(**Engage > Messaging**, *In-app message*) and show **inside the app while it
+is open**. Firebase fetches them and shows them by itself, with its own
+screens; Python listens, triggers and pauses.
+
+```python
+from pyios_firebase.in_app_messaging import DismissType, InAppMessaging
+
+iam = InAppMessaging.in_app_messaging()
+
+iam.add_impression_listener(lambda message: print("seen", message.campaign.campaign_name))
+iam.add_click_listener(lambda message, action: open_screen(action.url))  # action.text, action.url
+iam.add_dismiss_listener(lambda message, dismiss_type: print("closed", dismiss_type))
+iam.add_error_listener(lambda message, error: print("not shown", error.description))
+
+iam.trigger_event("level_done")             # the campaigns of this event (an Analytics event works too)
+iam.message_display_suppressed = True       # not now (a payment, a game level); off at every launch
+iam.automatic_data_collection_enabled = False   # fetch nothing until the user agrees (kept)
+```
+
+Messages are typed: `ModalMessage`, `BannerMessage`, `CardMessage` and
+`ImageOnlyMessage`, with the campaign, the title and body, images (with the
+downloaded bytes), buttons, colors as `"#RRGGBB"`, the action URL and the
+campaign's custom data (`app_data`).
+
+To draw them with your own UI instead (a Kivy popup), give a display
+handler, and tell Firebase what happened through its delegate:
+
+```python
+def show(message, delegate):
+    popup = make_popup(message)                  # your UI
+    popup.on_button = lambda: delegate.clicked()         # the message's main action
+    popup.on_close = lambda: delegate.dismissed(DismissType.USER_TAP_CLOSE)
+    popup.open()
+    delegate.impression()                        # counted as seen
+
+iam.set_display(show)        # runs on the main thread
+iam.use_default_display()    # Firebase's screens again
+```
+
+Call exactly one of `clicked`, `dismissed` or `failed` per message (until
+then Firebase shows no other); a second one raises `RuntimeError`. If the
+handler raises, the message counts as failed.
+
+| Guide page | In pyios-firebase |
+|---|---|
+| Get started | Add `FirebaseInAppMessaging-Beta` (and `FirebaseAnalytics`); messages show by themselves |
+| Send a test message | Run with `-FIRDebugEnabled`, find the installation ID in `I-IAM180017 Starting InAppMessaging runtime with Firebase Installation ID ...`, and use it in **Test on device** |
+| Trigger messages | `trigger_event(name)`, or an Analytics event; app foreground |
+| Suppress messages | `message_display_suppressed` |
+| Respond to interactions | `add_impression_listener`, `add_click_listener`, `add_dismiss_listener`, `add_error_listener` |
+| Custom data | `message.app_data` |
+| Customize the display | `set_display(handler)` with a `DisplayDelegate`; `use_default_display()` |
+| Opt-out / consent | `automatic_data_collection_enabled`; `FirebaseInAppMessagingAutomaticDataCollectionEnabled` in `Info.plist` |
+
+The Firebase emulators do not serve In-App Messaging.
+
+---
+
 ## API reference
 
 ### Firestore
@@ -1715,6 +1784,12 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 - `MessagingError` (`name`), `MessagingErrorCode`, `APNSTokenType`, `MessagingMessageStatus`, `MESSAGING_ERROR_DOMAIN`
 - `notifications`: `request_permission(options, cb)`, `authorization_status(cb)`, `register_for_remote_notifications()`, `set_handlers(on_foreground, on_open, *, default_presentation)`; `Notification` (`identifier`, `title`, `subtitle`, `body`, `badge`, `data`, `category`, `thread_id`, `date`, `message_id`); `AuthorizationOptions`, `AuthorizationStatus`, `PresentationOptions`, `DEFAULT_ACTION`, `DISMISS_ACTION`
 
+### In-App Messaging
+
+- `InAppMessaging.in_app_messaging()`: `message_display_suppressed`, `automatic_data_collection_enabled`, `trigger_event(name)`, `add_impression_listener(fn)`, `add_click_listener(fn)`, `add_dismiss_listener(fn)`, `add_error_listener(fn)` (each returns a remove function), `set_display(handler)`, `use_default_display()`
+- `DisplayDelegate`: `message`, `impression()`, `clicked(action=None)`, `dismissed(dismiss_type)`, `failed(code, description)`, `finished`
+- `ModalMessage`, `BannerMessage`, `CardMessage`, `ImageOnlyMessage` (`InAppMessage`: `campaign`, `type`, `trigger_type`, `app_data`), `CampaignInfo`, `ImageData`, `ActionButton`, `Action`, `default_action(message)`; `MessageType`, `TriggerType`, `DismissType`, `InAppMessagingError` (`name`), `InAppMessagingErrorCode`, `IN_APP_MESSAGING_ERROR_DOMAIN`
+
 ### Performance Monitoring
 
 - `Performance.performance()`: `trace(name)`, `start_trace(name)`, `data_collection_enabled`, `instrumentation_enabled`
@@ -1773,6 +1848,7 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 | An Analytics event does not show up | It may take up to a day in reports: use DebugView (`-FIRDebugEnabled`) to see events at once |
 | Crashlytics shows no crash | Crashlytics does not report while the debugger is attached: launch the app from the Home screen, crash, then launch it again to send |
 | Performance traces or HTTP metrics do nothing | `trace.active` is `False`: data collection is off (`data_collection_enabled`, or `firebase_performance_collection_enabled` in `Info.plist`) |
+| No in-app message shows | Campaigns are fetched at most once a day (except in the first 5 launches, and on a test device); `message_display_suppressed` may be on, or another message is still showing. Run with `-FIRDebugEnabled` to see the SDK's reasons |
 | Tapping a notification opens a closed Kivy app, but `on_open` is not called | Add the pyios-firebase-notifications-hook package (see Cloud Messaging); `notifications.launch_hook_status()` is `None` without it |
 | No FCM token | On a device: the push capability and an APNs key in the console are needed. FCM does not work in the Simulator |
 | Remote Config values never change | `minimum_fetch_interval` (12 h by default) has not passed, or you fetched but did not `activate` |
@@ -1919,6 +1995,10 @@ recorded the crash.
 - Performance Monitoring (no emulator exists): traces with metrics and
   attributes, a Python request measured with `HTTPMetric`, inactive traces
   while collection is off, and name checks.
+- In-App Messaging (no emulator exists): settings and event checks, a Python
+  display called the way Firebase calls it, and Firebase's own modal shown
+  over the Kivy window, with its impression and a tap on its button reaching
+  the listeners.
 
 It needs Xcode with an iOS simulator, [uv](https://docs.astral.sh/uv/),
 `firebase-tools` and Java 21+ for the emulators. The first run creates a Python

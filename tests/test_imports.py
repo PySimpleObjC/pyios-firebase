@@ -19,6 +19,7 @@ import pytest
         "pyios_firebase.database",
         "pyios_firebase.firestore",
         "pyios_firebase.functions",
+        "pyios_firebase.in_app_messaging",
         "pyios_firebase.messaging",
         "pyios_firebase.messaging.notifications",
         "pyios_firebase.performance",

@@ -83,13 +83,14 @@ venvPath = "."
 venv = ".venv"
 
 [[tool.mypy.overrides]]
-# The Objective-C bridges (Apple sign-in, App Check providers, the Messaging
-# and notification center delegates) must subclass Rubicon's (untyped)
+# The Objective-C bridges (Apple sign-in, App Check providers, the Messaging,
+# notification center and In-App Messaging delegates) must subclass Rubicon's (untyped)
 # NSObject and use its @objc_method decorator, which strict mode rejects by
 # design
 module = [
     "pyios_firebase.auth.apple",
     "pyios_firebase.app_check",
+    "pyios_firebase.in_app_messaging.in_app_messaging",
     "pyios_firebase.messaging.messaging",
     "pyios_firebase.messaging.notifications",
 ]

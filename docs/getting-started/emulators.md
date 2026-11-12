@@ -116,6 +116,7 @@ objc_class("FIRApp").configureWithOptions_(options)
 | Crashlytics | Crash without the debugger attached, then launch again to send |
 | Cloud Messaging | FCM does not reach the Simulator; `xcrun simctl push` delivers a test payload |
 | Performance Monitoring | Run with `-FIRDebugEnabled` to see the traces sent |
+| In-App Messaging | Send a test message to the device's installation ID ([how](../in-app-messaging/index.md#test-a-campaign-on-your-device)) |
 
 ## Clear the data between runs
 
