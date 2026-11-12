@@ -246,3 +246,67 @@ def test_permission_and_status(monkeypatch, blocks):
     fire(center.block(), settings)
     assert got == [(True, None), 2]
     assert not blocks
+
+
+# ---- the tap that launched the app (pyios-firebase-notifications-hook) -----------
+
+
+@pytest.fixture
+def launch_hook(monkeypatch, handlers):
+    """A launch hook that kept one tap, and a main thread that runs at once."""
+    kept = [
+        SimpleNamespace(
+            notification=fake_notification(), actionIdentifier=DEFAULT_ACTION
+        )
+    ]
+
+    def take():
+        taken = list(kept)
+        kept.clear()
+        return taken
+
+    hook = SimpleNamespace(
+        status=lambda: "ok: SDLUIKitSceneDelegate", takeResponses=take
+    )
+    monkeypatch.setattr(notifications, "_hook", lambda: hook)
+    monkeypatch.setattr(notifications, "_on_main_thread", lambda fn: fn())
+    return kept
+
+
+def test_launch_tap_is_delivered_to_on_open(launch_hook, handlers):
+    opened = []
+    notifications.set_handlers(on_open=lambda n, action: opened.append((n, action)))
+    ((notification, action),) = opened
+    assert action == DEFAULT_ACTION
+    assert notification.title == "Sale" and notification.data["screen"] == "shop"
+    assert notification.identifier == "req-1"  # the full Notification, not a copy
+    assert isinstance(handlers.delegate, PyNotificationCenterDelegate)  # as before
+    notifications.set_handlers(on_open=lambda n, action: opened.append((n, action)))
+    assert len(opened) == 1  # delivered once
+
+
+def test_launch_tap_waits_for_an_on_open(launch_hook, handlers):
+    notifications.set_handlers(on_foreground=lambda n: None)  # no on_open yet
+    assert len(launch_hook) == 1  # still kept by the hook
+    opened = []
+    notifications.set_handlers(on_open=lambda n, action: opened.append(action))
+    assert opened == [DEFAULT_ACTION] and not launch_hook
+
+
+def test_without_the_hook_nothing_changes(monkeypatch, handlers):
+    monkeypatch.setattr(notifications, "_hook", lambda: None)
+    scheduled = []
+    monkeypatch.setattr(notifications, "_on_main_thread", scheduled.append)
+    notifications.set_handlers(on_open=lambda n, action: None)
+    assert not scheduled
+    assert isinstance(handlers.delegate, PyNotificationCenterDelegate)
+    assert notifications.launch_hook_status() is None
+
+
+def test_launch_hook_status(launch_hook):
+    assert notifications.launch_hook_status() == "ok: SDLUIKitSceneDelegate"
+
+
+def test_no_hook_class_in_this_process():
+    # the real lookup: the class is not in the test process
+    assert notifications._hook() is None

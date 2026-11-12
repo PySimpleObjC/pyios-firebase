@@ -59,6 +59,13 @@ url = "https://github.com/facebook/facebook-ios-sdk.git"
 requirement = { from = "19.0.1" }
 products = ["FacebookLogin"]
 
+# Keeps the notification tap that launches the app until Python can take it
+# (pyios_firebase.messaging.notifications.set_handlers delivers it to on_open)
+[tool.kivy.ios.native.swift_packages.PyiosFirebaseNotificationsHook]
+url = "https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git"
+requirement = { from = "0.1.0" }
+products = ["PyiosFirebaseNotificationsHook"]
+
 [tool.kivy.ios.xcode.build_settings]
 OTHER_LDFLAGS = "$(inherited) -ObjC"
 

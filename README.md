@@ -1370,6 +1370,21 @@ deliver a test payload to it. Data-only (silent) messages go to the app
 delegate, which a Kivy app does not own in Python: send the data with a
 notification instead.
 
+**A tap that launches a closed Kivy app.** iOS delivers that tap before a Kivy
+app's Python starts, so `on_open` cannot get it by itself. Add the small
+optional
+[pyios-firebase-notifications-hook](https://github.com/PySimpleObjC/pyios-firebase-notifications-hook)
+Swift package: it keeps the tap, and `set_handlers(on_open=...)` delivers it,
+with no code change. `notifications.launch_hook_status()` tells whether it is
+in the app. Taps while the app is open or in the background need nothing.
+
+```toml
+[tool.kivy.ios.native.swift_packages.PyiosFirebaseNotificationsHook]
+url = "https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git"
+requirement = { from = "0.1.0" }
+products = ["PyiosFirebaseNotificationsHook"]
+```
+
 ---
 
 ## Performance Monitoring
@@ -1758,6 +1773,7 @@ by name (`EMAIL_ALREADY_IN_USE`, `WRONG_PASSWORD`, `REQUIRES_RECENT_LOGIN`,
 | An Analytics event does not show up | It may take up to a day in reports: use DebugView (`-FIRDebugEnabled`) to see events at once |
 | Crashlytics shows no crash | Crashlytics does not report while the debugger is attached: launch the app from the Home screen, crash, then launch it again to send |
 | Performance traces or HTTP metrics do nothing | `trace.active` is `False`: data collection is off (`data_collection_enabled`, or `firebase_performance_collection_enabled` in `Info.plist`) |
+| Tapping a notification opens a closed Kivy app, but `on_open` is not called | Add the pyios-firebase-notifications-hook package (see Cloud Messaging); `notifications.launch_hook_status()` is `None` without it |
 | No FCM token | On a device: the push capability and an APNs key in the console are needed. FCM does not work in the Simulator |
 | Remote Config values never change | `minimum_fetch_interval` (12 h by default) has not passed, or you fetched but did not `activate` |
 | A query fails with an index error | Open the link in the error message and create the index |

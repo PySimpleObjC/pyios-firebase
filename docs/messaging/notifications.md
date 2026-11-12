@@ -12,8 +12,8 @@ from pyios_firebase.messaging.notifications import AuthorizationOptions, Present
 
 ## Set the handlers first
 
-Set them **early**, before `App.run()`: a tap that launched the app is
-delivered right after start-up, and is lost if no handler is there yet.
+Set them **early**, before `App.run()`. In a Kivy app, also add the
+[launch hook](#when-the-app-is-closed) to get the tap that opens a closed app.
 
 ```python
 def on_foreground(notification):
@@ -43,6 +43,74 @@ and are not shown by default. The handlers run on the main thread.
 
 `set_handlers` makes pyios-firebase the notification center's delegate,
 replacing any other.
+
+## When the app is closed
+
+What `on_open` gets depends on whether the app was running when the user
+tapped:
+
+| The app was... | The tap opens the app | `on_open` gets the notification |
+|---|---|---|
+| Open (in front) | (it is open) | Yes |
+| In the background | Yes | Yes |
+| **Closed** (not running), BeeWare / Toga | Yes | Expected, with `set_handlers` in `startup()`: Python starts before launch there (not tested yet) |
+| **Closed** (not running), **Kivy** | Yes | **Only with the launch hook below** |
+
+**Why Kivy needs a hook.** When a tap launches the app, iOS delivers it
+*during* launch. A Kivy app's Python starts only *after* launch (SDL starts the
+interpreter), so no handler exists yet: iOS drops the tap
+(`response-not-possible` in the system log). The app opens, but cannot know
+which notification was tapped. No Python code can run early enough to catch
+it.
+
+### The launch hook
+
+[pyios-firebase-notifications-hook](https://github.com/PySimpleObjC/pyios-firebase-notifications-hook)
+is a tiny optional Swift package (one Objective-C file). It starts before
+Python, sets a notification handler before launch ends, and keeps the tap.
+`set_handlers(on_open=...)` then passes it to your `on_open`, as soon as the
+app's event loop runs. **You write no new code**: add the package, and keep
+calling `set_handlers`.
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [tool.kivy.ios.native.swift_packages.PyiosFirebaseNotificationsHook]
+    url = "https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git"
+    requirement = { from = "0.1.0" }
+    products = ["PyiosFirebaseNotificationsHook"]
+    ```
+
+=== "Xcode (kivy-ios)"
+
+    **File > Add Package Dependencies...**, enter
+    `https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git`, and
+    add the `PyiosFirebaseNotificationsHook` product to the app target.
+
+```python
+from pyios_firebase.messaging import notifications
+
+notifications.set_handlers(on_open=on_open)       # before App.run(), as always
+print(notifications.launch_hook_status())          # "ok: SDLUIKitSceneDelegate"
+```
+
+| `launch_hook_status()` | Means |
+|---|---|
+| `None` | The hook is not in the app: a tap that launches a Kivy app does not reach `on_open` |
+| `"ok: SDLUIKitSceneDelegate"` (or another class) | The hook is keeping launch taps |
+
+Good to know:
+
+- The `Notification` is the same as for any other tap: title, body, data, FCM
+  message ID, identifier and date.
+- Without `on_open` yet, the tap stays in the hook until a `set_handlers` call
+  with one.
+- For taps the hook kept, pyios-firebase also tells Firebase Messaging the
+  notification was opened (for its statistics), once Firebase is configured.
+- The hook never replaces a notification handler your app set itself. Toga
+  apps should not need it (see the table).
+- Tested end to end in the iOS Simulator: the app is closed, a notification is
+  pushed, the banner is tapped, and `on_open` gets its data.
 
 ## Ask permission
 
@@ -110,8 +178,9 @@ Data sent with `data={...}` from the server arrives as keys of
 !!! warning "Data-only messages"
     Data-only (silent) messages go to the app delegate's
     `application:didReceiveRemoteNotification:fetchCompletionHandler:`,
-    which belongs to Kivy's (SDL) or Toga's native code, not to Python. Send
-    data **with** a notification, or read it when the user opens the app.
+    which belongs to the app's native code (SDL's in a Kivy app), not to
+    Python. Send data **with** a notification, or read it when the user opens
+    the app.
 
 Images in notifications need a *Notification Service Extension*, a separate
 native target (Swift or Objective-C): not something Python can provide.

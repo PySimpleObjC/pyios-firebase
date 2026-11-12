@@ -41,6 +41,8 @@ DATABASE_NAMESPACE="demo-pyios-firebase-default-rtdb"
 APP_CHECK_DEBUG_TOKEN="00000000-e2e0-4000-8000-000000000000"
 RESULTS_NAME="pyios-e2e-results.json"
 AFTER_CRASH_RESULTS_NAME="pyios-e2e-results-after-crash.json"
+LAUNCH_TAP_RESULTS_NAME="pyios-e2e-results-launch-tap.json"
+OPENED_NAME="pyios-e2e-notification-open.json"
 PUSH_REQUEST_NAME="pyios-e2e-push.json"
 # the kivyforge commit the build is known to work with
 KIVYFORGE="git+https://github.com/ElliotGarbus/kivyforge.git@758dc40e6e7f3c430f06f5f25c98023882926e28"
@@ -163,6 +165,16 @@ deliver_push() {
 
 DEVICE_UDID="$(device_udid)"
 [[ -n "$DEVICE_UDID" ]] || die "no simulator named \"$DEVICE\" (xcrun simctl list devices available)"
+# Boot the simulator here, with no SIMCTL_CHILD_* variables: a device booted
+# while they are set keeps them for EVERY app launch (launchd_bootstrap.plist),
+# even the one a notification tap makes. Reboot a device that has them.
+BOOTSTRAP="$HOME/Library/Developer/CoreSimulator/Devices/$DEVICE_UDID/data/var/run/launchd_bootstrap.plist"
+if [[ -f "$BOOTSTRAP" ]] && plutil -p "$BOOTSTRAP" 2>/dev/null | /usr/bin/grep -q '"E2E_'; then
+  say "restarting the simulator: it was booted with test variables"
+  xcrun simctl shutdown "$DEVICE_UDID" >/dev/null 2>&1 || true
+fi
+env -u SIMCTL_CHILD_E2E_PHASE -u SIMCTL_CHILD_E2E_CRASH_AT_END xcrun simctl boot "$DEVICE_UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$DEVICE_UDID" -b >/dev/null 2>&1 || true
 # results from an earlier run must not be mistaken for this run's
 for name in "$RESULTS_NAME" "$AFTER_CRASH_RESULTS_NAME" "$PUSH_REQUEST_NAME"; do
   if old="$(documents_path "$name")"; then rm -f "$old"; fi
@@ -171,7 +183,7 @@ done
 
 say "building and launching on $DEVICE ($DEVICE_UDID) — the first build takes a few minutes"
 # simctl hands SIMCTL_CHILD_* variables to the launched app, without the prefix
-SIMCTL_CHILD_FIRAAppCheckDebugToken="$APP_CHECK_DEBUG_TOKEN" SIMCTL_CHILD_E2E_CRASH_AT_END=1 \
+SIMCTL_CHILD_E2E_PHASE=main SIMCTL_CHILD_FIRAAppCheckDebugToken="$APP_CHECK_DEBUG_TOKEN" SIMCTL_CHILD_E2E_CRASH_AT_END=1 \
   kivyforge run -p ios --simulator --destination "$DEVICE_UDID" >"$LOGS/app.log" 2>&1 &
 APP_PID=$!
 
@@ -216,14 +228,103 @@ else
     >"$LOGS/$AFTER_CRASH_RESULTS_NAME"
 fi
 
-python3 - "$LOGS/$RESULTS_NAME" "$LOGS/$AFTER_CRASH_RESULTS_NAME" <<'PY'
+# ---- 6. a notification tap that launches the closed app --------------------------
+# iOS delivers that tap before a Kivy app's Python starts; the
+# pyios-firebase-notifications-hook package keeps it for set_handlers. idb
+# taps the banner on the home screen, as a user would.
+say "tapping a notification while the app is closed (launch tap)"
+kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true; APP_PID=""
+xcrun simctl terminate "$DEVICE_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+launch_tap_result() {  # launch_tap_result ok|fail|skip "detail"
+  python3 - "$LOGS/$LAUNCH_TAP_RESULTS_NAME" "$1" "$2" <<'PY'
+import json, sys
+path, outcome, detail = sys.argv[1:4]
+ok = outcome != "fail"
+result = {"name": "test_notification_tap_launches_closed_app", "ok": ok, "seconds": 0,
+          "detail": ("SKIP: " if outcome == "skip" else "") + detail}
+if outcome == "skip":
+    result["skipped"] = True
+json.dump({"passed": int(outcome == "ok"), "failed": int(not ok), "skipped": int(outcome == "skip"),
+           "seconds": 0, "results": [result]}, open(path, "w"))
+PY
+}
+ui_find() {  # ui_find "label": the centre of the first element with this exact label
+  idb ui describe-all --udid "$DEVICE_UDID" 2>/dev/null | python3 -I -c '
+import json, sys
+for e in json.load(sys.stdin):
+    if (e.get("AXLabel") or "") == sys.argv[1]:
+        f = e["frame"]; print(round(f["x"] + f["width"] / 2), round(f["y"] + f["height"] / 2)); break' "$1"
+}
+app_running() { pgrep -f "pyios-firebase-e2e.app/pyios-firebase-e2e" >/dev/null; }
+if ! command -v idb >/dev/null; then
+  launch_tap_result skip "idb is not installed (brew install idb-companion; pipx install fb-idb)"
+else
+  idb connect "$DEVICE_UDID" >/dev/null 2>&1 || true
+  # full notification permission, so the banner shows on the home screen: the
+  # dialog appears once the app is in the background; already granted, none does
+  SIMCTL_CHILD_E2E_PHASE=notification-permission xcrun simctl launch "$DEVICE_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+  sleep 12
+  xcrun simctl terminate "$DEVICE_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+  for _ in $(seq 1 8); do
+    allow="$(ui_find Allow)"
+    if [[ -n "$allow" ]]; then idb ui tap --udid "$DEVICE_UDID" $allow; break; fi
+    sleep 1
+  done
+  sleep 2
+  if opened="$(documents_path "$OPENED_NAME")"; then rm -f "$opened"; fi
+  tap_id="e2e-launch-tap-$(date +%s)"
+  printf '{"aps": {"alert": {"title": "Your order shipped", "body": "Tap to see it"}}, "gcm.message_id": "%s", "screen": "orders", "order_id": "42"}' \
+    "$tap_id" >"$LOGS/launch-tap.json"
+  xcrun simctl push "$DEVICE_UDID" "$BUNDLE_ID" "$LOGS/launch-tap.json" >>"$LOGS/push.log" 2>&1
+  sleep 1
+  # the banner's centre (iPhone layout: the top of the screen), until it launches the app
+  for _ in $(seq 1 10); do
+    idb ui tap --udid "$DEVICE_UDID" 201 92
+    sleep 0.6
+    app_running && break
+  done
+  record=""
+  for _ in $(seq 1 60); do
+    if opened="$(documents_path "$OPENED_NAME")" && [[ -f "$opened" ]]; then record="$opened"; break; fi
+    sleep 1
+  done
+  if [[ -z "$record" ]]; then
+    if app_running; then
+      launch_tap_result fail "the tap launched the app, but on_open was not called (is the hook in the app?)"
+    else
+      launch_tap_result fail "the banner tap did not launch the app"
+    fi
+  elif detail="$(python3 - "$record" "$tap_id" <<'PY'
+import json, sys
+got = json.load(open(sys.argv[1]))
+checks = {
+    "title": got["title"] == "Your order shipped",
+    "body": got["body"] == "Tap to see it",
+    "data": got["data"].get("screen") == "orders" and got["data"].get("order_id") == "42",
+    "message_id": got["message_id"] == sys.argv[2],
+    "action": got["action"] == "com.apple.UNNotificationDefaultActionIdentifier",
+}
+bad = [name for name, ok in checks.items() if not ok]
+print(("wrong " + ", ".join(bad) + ": ") if bad else "", json.dumps(got), sep="")
+sys.exit(1 if bad else 0)
+PY
+)"; then
+    launch_tap_result ok "$detail"
+  else
+    launch_tap_result fail "$detail"
+  fi
+  xcrun simctl terminate "$DEVICE_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+fi
+
+python3 - "$LOGS/$RESULTS_NAME" "$LOGS/$AFTER_CRASH_RESULTS_NAME" "$LOGS/$LAUNCH_TAP_RESULTS_NAME" <<'PY'
 import json, sys
 report = json.load(open(sys.argv[1]))
-second = json.load(open(sys.argv[2]))
-report["results"] += second["results"]
-for key in ("passed", "failed", "skipped"):
-    report[key] = report.get(key, 0) + second.get(key, 0)
-report["seconds"] = round(report["seconds"] + second["seconds"], 2)
+for extra in sys.argv[2:]:
+    second = json.load(open(extra))
+    report["results"] += second["results"]
+    for key in ("passed", "failed", "skipped"):
+        report[key] = report.get(key, 0) + second.get(key, 0)
+    report["seconds"] = round(report["seconds"] + second["seconds"], 2)
 for r in report["results"]:
     if r.get("skipped"):
         mark = "\033[33mSKIP\033[0m"
