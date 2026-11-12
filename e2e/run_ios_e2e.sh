@@ -256,18 +256,22 @@ for e in json.load(sys.stdin):
         f = e["frame"]; print(round(f["x"] + f["width"] / 2), round(f["y"] + f["height"] / 2)); break' "$1"
 }
 app_running() { pgrep -f "pyios-firebase-e2e.app/pyios-firebase-e2e" >/dev/null; }
+# every step below may fail without stopping the script (set -e): a failure
+# here is this test's result, and phases 1-5 still report
+idb connect "$DEVICE_UDID" >/dev/null 2>&1 || true
 if ! command -v idb >/dev/null; then
   launch_tap_result skip "idb is not installed (brew install idb-companion; pipx install fb-idb)"
+elif ! idb ui describe-all --udid "$DEVICE_UDID" >/dev/null 2>&1; then
+  launch_tap_result skip "idb cannot reach the simulator (try: idb kill; idb connect $DEVICE_UDID)"
 else
-  idb connect "$DEVICE_UDID" >/dev/null 2>&1 || true
   # full notification permission, so the banner shows on the home screen: the
   # dialog appears once the app is in the background; already granted, none does
   SIMCTL_CHILD_E2E_PHASE=notification-permission xcrun simctl launch "$DEVICE_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   sleep 12
   xcrun simctl terminate "$DEVICE_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
   for _ in $(seq 1 8); do
-    allow="$(ui_find Allow)"
-    if [[ -n "$allow" ]]; then idb ui tap --udid "$DEVICE_UDID" $allow; break; fi
+    allow="$(ui_find Allow || true)"
+    if [[ -n "$allow" ]]; then idb ui tap --udid "$DEVICE_UDID" $allow || true; break; fi
     sleep 1
   done
   sleep 2
@@ -275,11 +279,11 @@ else
   tap_id="e2e-launch-tap-$(date +%s)"
   printf '{"aps": {"alert": {"title": "Your order shipped", "body": "Tap to see it"}}, "gcm.message_id": "%s", "screen": "orders", "order_id": "42"}' \
     "$tap_id" >"$LOGS/launch-tap.json"
-  xcrun simctl push "$DEVICE_UDID" "$BUNDLE_ID" "$LOGS/launch-tap.json" >>"$LOGS/push.log" 2>&1
+  xcrun simctl push "$DEVICE_UDID" "$BUNDLE_ID" "$LOGS/launch-tap.json" >>"$LOGS/push.log" 2>&1 || true
   sleep 1
   # the banner's centre (iPhone layout: the top of the screen), until it launches the app
   for _ in $(seq 1 10); do
-    idb ui tap --udid "$DEVICE_UDID" 201 92
+    idb ui tap --udid "$DEVICE_UDID" 201 92 >/dev/null 2>&1 || true
     sleep 0.6
     app_running && break
   done
