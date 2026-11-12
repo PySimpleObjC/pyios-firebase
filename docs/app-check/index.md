@@ -16,6 +16,48 @@ requests without a valid token.
 4. Watch the metrics in the console, then turn **enforcement** on for each
    product once the traffic is verified.
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebaseAppCheck"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+    # App Attest: "development" for debug builds,
+    # "production" for TestFlight and the App Store
+    [tool.kivy.ios.entitlements]
+    "com.apple.developer.devicecheck.appattest-environment" = "production"
+
+    # optional: stop refreshing tokens in the background
+    [tool.kivy.ios.info_plist]
+    FirebaseAppCheckTokenAutoRefreshEnabled = false
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebaseAppCheck`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+    4. **Signing & Capabilities > + Capability > App Attest** (for App Attest).
+    5. Optional, in **Info**: `FirebaseAppCheckTokenAutoRefreshEnabled` = `NO`.
+
+!!! note
+    DeviceCheck and the debug provider need no entitlement. In CI, pass the debug token as the `FIRAAppCheckDebugToken` environment variable.
+
+
 ## Choose a provider
 
 ```python

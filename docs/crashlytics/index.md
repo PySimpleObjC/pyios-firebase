@@ -31,6 +31,44 @@ crashlytics.set_user_id(uid)
 
 3. Open **Crashlytics** in the console.
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebaseCrashlytics"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+    # optional: keep reports on the device until the user agrees
+    [tool.kivy.ios.info_plist]
+    FirebaseCrashlyticsCollectionEnabled = false
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebaseCrashlytics`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+    4. **Build Settings > Debug Information Format**: *DWARF with dSYM File*.
+    5. **Build Phases > + > New Run Script Phase**: `"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"`, with the input files `${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}` and `${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}`.
+    6. Optional, in **Info**: `FirebaseCrashlyticsCollectionEnabled` = `NO`.
+
+!!! note
+    kivyforge already makes Release builds with dSYMs (`DEBUG_INFORMATION_FORMAT` is `dwarf-with-dsym` for Release, `dwarf` for Debug, and kivyforge manages it: do not set it in `build_settings`). It has no setting for a custom build phase, so upload the dSYMs of a **Release archive** yourself: `<DerivedData>/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols -gsp GoogleService-Info.plist -p ios <the archive's dSYMs folder>`.
+
+
 ## Python exceptions
 
 A Python exception does not crash the app by itself: Kivy or Toga catches
