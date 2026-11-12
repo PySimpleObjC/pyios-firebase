@@ -37,8 +37,8 @@ jobs:
         run: uv sync --group dev
       - name: Lint
         run: |
-          uvx ruff check src tests
-          uvx ruff format --check src tests
+          uv run ruff check src tests
+          uv run ruff format --check src tests
       - name: mypy (strict)
         run: uv run mypy
       - name: pyright

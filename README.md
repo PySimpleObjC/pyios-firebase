@@ -1825,7 +1825,7 @@ uv sync --group dev
 uv run pytest      # tests
 uv run mypy        # strict type check of the package and of tests/typing
 uv run pyright     # the checker behind VS Code's Pylance
-uv run ruff check
+uv run ruff check src tests
 ```
 
 ### Releasing

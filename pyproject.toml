@@ -53,7 +53,9 @@ Source = "https://github.com/PySimpleObjC/pyios-firebase"
 Issues = "https://github.com/PySimpleObjC/pyios-firebase/issues"
 
 [dependency-groups]
-dev = ["pytest>=8", "mypy>=1.13", "pyright>=1.1.390"]
+# ruff is pinned exactly: its rules change between releases (uv.lock is not
+# committed, so the pin is what keeps CI and releases reproducible)
+dev = ["pytest>=8", "mypy>=1.13", "pyright>=1.1.390", "ruff==0.17.4"]
 # the documentation website (docs/, mkdocs.yml): uv run --group docs mkdocs serve
 docs = ["mkdocs-material>=9.5", "mkdocstrings[python]>=0.27", "ruff>=0.6"]
 
