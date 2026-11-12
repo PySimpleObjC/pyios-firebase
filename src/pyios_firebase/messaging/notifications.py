@@ -33,12 +33,14 @@ read it when the user opens the app.
 from __future__ import annotations
 
 __all__ = (
+    "HOOK_CLASS_NAME",
     "AuthorizationOptions",
     "AuthorizationStatus",
     "Notification",
     "PresentationOptions",
     "PyNotificationCenterDelegate",
     "authorization_status",
+    "launch_hook_status",
     "register_for_remote_notifications",
     "request_permission",
     "set_handlers",
@@ -64,6 +66,10 @@ from ..util import (
     one_shot_block,
     to_python,
 )
+
+HOOK_CLASS_NAME: Final = "PyiosFirebaseNotificationsHook"
+"""The class of the optional launch hook package (pyios-firebase-notifications-hook),
+which keeps the tap that launches a Kivy app until ``set_handlers`` runs."""
 
 DEFAULT_ACTION: Final = "com.apple.UNNotificationDefaultActionIdentifier"
 """The ``action`` of ``on_open`` when the user tapped the notification itself."""
@@ -264,6 +270,61 @@ class _Handlers:
     delegate: ClassVar[ObjCObject | None] = None  # the center only holds it weakly
 
 
+def _hook() -> ObjCObject | None:
+    try:
+        return objc_class(HOOK_CLASS_NAME)
+    except NameError:
+        return None
+
+
+def launch_hook_status() -> str | None:
+    """Whether the launch hook package is in the app, and working.
+
+    Returns:
+        ``None`` when the app does not include pyios-firebase-notifications-hook;
+        otherwise the hook's status, which starts with ``"ok"`` when it is
+        keeping launch taps (for example ``"ok: SDLUIKitSceneDelegate"``).
+    """
+    hook = _hook()
+    return None if hook is None else str(hook.status())
+
+
+def _on_main_thread(function: Callable[[], None]) -> None:
+    """Run ``function`` on the main thread's next turn (once the app's event
+    loop runs), not now."""
+    queue: ObjCObject = objc_class("NSOperationQueue").mainQueue
+    if callable(queue):  # a class property: Rubicon may give it as a method
+        queue = queue()
+    queue.addOperationWithBlock_(one_shot_block(function))
+
+
+def _report_open(notification: Notification) -> None:
+    """Tell Firebase Messaging a notification was opened (its "opened"
+    statistics), for taps the hook kept: Firebase did not see those."""
+    try:
+        app = objc_class("FIRApp").defaultApp()
+        messaging = objc_class("FIRMessaging")
+    except NameError:
+        return
+    if app is None:  # Messaging before configure() would stop the app
+        return
+    from rubicon.objc import ns_from_py
+
+    messaging.messaging().appDidReceiveMessage_(ns_from_py(notification.data))
+
+
+def _deliver_launch_taps() -> None:
+    """Pass the taps the launch hook kept to ``on_open``."""
+    on_open = _Handlers.on_open
+    hook = _hook()
+    if on_open is None or hook is None:
+        return  # without on_open, the taps stay in the hook for a later call
+    for response in hook.takeResponses():
+        notification = Notification.from_native(response.notification)
+        _report_open(notification)
+        on_open(notification, str(response.actionIdentifier))
+
+
 def set_handlers(
     on_foreground: ForegroundHandler | None = None,
     on_open: OpenHandler | None = None,
@@ -271,11 +332,16 @@ def set_handlers(
     default_presentation: int = PresentationOptions.NONE,
 ) -> None:
     """Call Python when a notification arrives with the app open, and when the
-    user taps one. Call it early (before ``App.run()``): a tap that launched
-    the app is delivered right after start-up.
+    user taps one. Call it early (before ``App.run()``).
 
     This makes pyios-firebase the notification center's delegate (replacing
     any other).
+
+    A tap that **launches** the app (it was not running) is delivered by iOS
+    before a Kivy app's Python starts. With the optional
+    pyios-firebase-notifications-hook package in the app, that tap is kept and
+    passed to ``on_open`` here, once the app's event loop runs. Without the
+    hook, a Kivy app does not get it. See ``launch_hook_status``.
 
     Args:
         on_foreground: gets the ``Notification``; returns the
@@ -290,3 +356,5 @@ def set_handlers(
     if _Handlers.delegate is None:
         _Handlers.delegate = PyNotificationCenterDelegate.alloc().init()
     _center().delegate = _Handlers.delegate
+    if on_open is not None and _hook() is not None:
+        _on_main_thread(_deliver_launch_taps)

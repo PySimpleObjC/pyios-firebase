@@ -9,6 +9,9 @@ on screen, prints them (prefix ``PYIOS-E2E``), and writes them to
 ``E2E_CRASH_AT_END=1``: crash on purpose after the results (Crashlytics).
 ``E2E_PHASE=after-crash``: only the Crashlytics checks of that crash, written
 to ``Documents/pyios-e2e-results-after-crash.json``.
+``E2E_PHASE=notification-permission``: ask for full notification permission.
+No ``E2E_PHASE`` (a launch from a tapped notification): idle; ``on_open``
+records the tap (notification_open.py).
 
 No GoogleService-Info.plist: Firebase is configured in code for the offline
 ``demo-pyios-firebase`` project, which only the emulator serves.
@@ -32,7 +35,9 @@ STORAGE_EMULATOR_HOST = os.environ.get("FIREBASE_STORAGE_EMULATOR_HOST", "127.0.
 STORAGE_BUCKET = "demo-pyios-firebase.appspot.com"
 DATABASE_URL = "https://demo-pyios-firebase-default-rtdb.firebaseio.com"
 DATABASE_EMULATOR_HOST = os.environ.get("FIREBASE_DATABASE_EMULATOR_HOST", "127.0.0.1:9000")
-PHASE = os.environ.get("E2E_PHASE", "main")
+# no E2E_PHASE: launched by a tapped notification (iOS passes no environment),
+# so do nothing but record the tap (notification_open.py)
+PHASE = os.environ.get("E2E_PHASE", "idle")
 CRASH_AT_END = os.environ.get("E2E_CRASH_AT_END") == "1"
 RESULTS = os.path.join(
     os.path.expanduser("~/Documents"),
@@ -97,6 +102,16 @@ class E2EApp(App):
         return scroll
 
     def on_start(self):
+        if PHASE == "idle":
+            self.label.text = "pyios-firebase e2e\nlaunched without E2E_PHASE (a notification tap?)"
+            print("PYIOS-E2E IDLE", flush=True)
+            return
+        if PHASE == "notification-permission":
+            from notification_open import ask_permission
+
+            self.label.text = "pyios-firebase e2e\nasking for notification permission"
+            ask_permission()
+            return
         try:
             os.remove(RESULTS)
         except FileNotFoundError:
@@ -205,5 +220,10 @@ class E2EApp(App):
 
 
 if __name__ == "__main__":
+    # before App.run(), at every launch, as an app must: a tap that launched the
+    # app is delivered right after start-up
+    from notification_open import install
+
+    install()
     E2EApp().run()
     sys.exit(0)

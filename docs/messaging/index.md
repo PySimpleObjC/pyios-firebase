@@ -79,6 +79,12 @@ them all in one `products`; see [App configuration](../getting-started/configura
     # optional: no token until you ask; register with the installation ID
     # FirebaseMessagingAutoInitEnabled = false
     # FirebaseMessagingInstallationIdEnabled = true
+
+    # Kivy: the tap that launches a closed app reaches on_open (optional)
+    [tool.kivy.ios.native.swift_packages.PyiosFirebaseNotificationsHook]
+    url = "https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git"
+    requirement = { from = "0.1.0" }
+    products = ["PyiosFirebaseNotificationsHook"]
     ```
 
 === "Xcode (kivy-ios, Briefcase)"
@@ -88,9 +94,15 @@ them all in one `products`; see [App configuration](../getting-started/configura
     3. Add `GoogleService-Info.plist` to the app target.
     4. **Signing & Capabilities**: *Push Notifications*, and *Background Modes > Remote notifications*.
     5. Optional, in **Info**: `FirebaseMessagingAutoInitEnabled` = `NO`, `FirebaseMessagingInstallationIdEnabled` = `YES`.
+    6. Kivy (kivy-ios), optional: add the `https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git` package (product `PyiosFirebaseNotificationsHook`), so a tap that launches the closed app reaches `on_open` ([Notifications](notifications.md#when-the-app-is-closed)).
 
 !!! note
     Upload an APNs authentication key in the console (**Project settings > Cloud Messaging**).
+
+!!! tip "Kivy: taps that launch the app"
+    Without the `PyiosFirebaseNotificationsHook` package, a Kivy app still
+    opens when a notification is tapped while it is closed, but `on_open` does
+    not get that tap. See [When the app is closed](notifications.md#when-the-app-is-closed).
 
 
 ## The registration token

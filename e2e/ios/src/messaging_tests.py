@@ -126,7 +126,10 @@ def test_notifications_foreground_push(t: TestContext) -> None:
         expect(notification.date is not None, "date")
         t.passed()
 
-    notifications.set_handlers(on_foreground=on_foreground)
+    # keep recording taps (notification_open.py): set_handlers replaces both
+    from notification_open import install
+
+    install(on_foreground=on_foreground)
     payload = {
         "aps": {"alert": {"title": "Sale", "body": "50% off today"}, "badge": 3},
         "gcm.message_id": message_id,

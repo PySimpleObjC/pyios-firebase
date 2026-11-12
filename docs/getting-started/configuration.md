@@ -21,7 +21,7 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
 | [App Check](../app-check/index.md#app-configuration) | `FirebaseAppCheck` | The App Attest entitlement |
 | [Analytics](../analytics/index.md#app-configuration) | `FirebaseAnalytics` | |
 | [Crashlytics](../crashlytics/index.md#app-configuration) | `FirebaseCrashlytics` | The dSYM upload (Release builds make them; kivyforge: `upload-symbols` from the archive) |
-| [Cloud Messaging](../messaging/index.md#app-configuration) | `FirebaseMessaging` | The `aps-environment` entitlement, `UIBackgroundModes` |
+| [Cloud Messaging](../messaging/index.md#app-configuration) | `FirebaseMessaging` | The `aps-environment` entitlement, `UIBackgroundModes`; in Kivy, the launch hook package (optional) |
 | [Performance Monitoring](../performance/index.md#app-configuration) | `FirebasePerformance` | |
 
 ## Everything together
@@ -57,6 +57,12 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
     url = "https://github.com/google/GoogleSignIn-iOS"
     requirement = { from = "10.1.0" }
     products = ["GoogleSignIn"]
+
+    # --- Messaging, Kivy: the tap that launches a closed app reaches on_open -----
+    [tool.kivy.ios.native.swift_packages.PyiosFirebaseNotificationsHook]
+    url = "https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git"
+    requirement = { from = "0.1.0" }
+    products = ["PyiosFirebaseNotificationsHook"]
 
     [tool.kivy.ios.native.swift_packages.facebook-ios-sdk]
     url = "https://github.com/facebook/facebook-ios-sdk.git"
@@ -103,7 +109,8 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
     1. **File > Add Package Dependencies...**:
         - `https://github.com/firebase/firebase-ios-sdk.git`: pick the products you use;
         - `https://github.com/google/GoogleSignIn-iOS`: `GoogleSignIn` (Google Sign-In);
-        - `https://github.com/facebook/facebook-ios-sdk.git`: `FacebookLogin` (Facebook Login).
+        - `https://github.com/facebook/facebook-ios-sdk.git`: `FacebookLogin` (Facebook Login);
+        - `https://github.com/PySimpleObjC/pyios-firebase-notifications-hook.git`: `PyiosFirebaseNotificationsHook` (Kivy: notification taps that launch the app).
     2. **Build Settings**: add `-ObjC` to *Other Linker Flags*; set *Debug Information Format* to *DWARF with dSYM File*.
     3. Add `GoogleService-Info.plist` (and `RemoteConfigDefaults.plist`) to the app target.
     4. **Info**: the URL types (the `REVERSED_CLIENT_ID`, `fb<APP_ID>`), the Facebook keys, `UIBackgroundModes` with `remote-notification`, and any optional keys.
