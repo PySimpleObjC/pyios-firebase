@@ -23,4 +23,4 @@ from .types import FirebaseError, QueryDict
 
 __all__ = ("FirebaseError", "QueryDict", "__version__", "configure")
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
