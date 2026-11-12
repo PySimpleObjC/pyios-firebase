@@ -23,6 +23,40 @@ Add the **`FirebaseRemoteConfig`** Swift package product
 Firebase Installations, which needs the real API key from
 `GoogleService-Info.plist`.
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebaseRemoteConfig"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+    # in-app defaults, read with defaults_plist="RemoteConfigDefaults"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["RemoteConfigDefaults.plist"]
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebaseRemoteConfig`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+    4. Add `RemoteConfigDefaults.plist` to the app target (if you use a defaults plist).
+
+
 ## How values flow
 
 ```mermaid

@@ -145,6 +145,7 @@ nav:
       - getting-started/index.md
       - Installation: getting-started/installation.md
       - Setup: getting-started/setup.md
+      - App configuration: getting-started/configuration.md
       - Emulator Suite: getting-started/emulators.md
       - Callbacks and threads: getting-started/callbacks.md
       - Errors: getting-started/errors.md

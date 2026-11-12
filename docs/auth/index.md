@@ -39,6 +39,84 @@ auth.add_state_did_change_listener(on_user)
 | Shared keychain | The *Keychain Sharing* capability |
 | Multi-factor | Identity Platform enabled on the project |
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebaseAuth"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+    # phone and web sign-in (Microsoft, GitHub, OIDC...): a callback URL scheme,
+    # the REVERSED_CLIENT_ID, or "app-" + GOOGLE_APP_ID with "-" for ":"
+    [[tool.kivy.ios.info_plist.CFBundleURLTypes]]
+    CFBundleTypeRole = "Editor"
+    CFBundleURLSchemes = ["app-1-1234567890-ios-0123456789abcdef"]
+
+    # Google Sign-In (pyios_firebase.auth.google)
+    [tool.kivy.ios.native.swift_packages.GoogleSignIn-iOS]
+    url = "https://github.com/google/GoogleSignIn-iOS"
+    requirement = { from = "10.1.0" }
+    products = ["GoogleSignIn"]
+
+    [[tool.kivy.ios.info_plist.CFBundleURLTypes]]
+    CFBundleTypeRole = "Editor"
+    # the REVERSED_CLIENT_ID
+    CFBundleURLSchemes = ["com.googleusercontent.apps.1234567890-abcdef"]
+
+    # Facebook Login (pyios_firebase.auth.facebook)
+    [tool.kivy.ios.native.swift_packages.facebook-ios-sdk]
+    url = "https://github.com/facebook/facebook-ios-sdk.git"
+    requirement = { from = "19.0.1" }
+    products = ["FacebookLogin"]
+
+    [tool.kivy.ios.info_plist]
+    FacebookAppID = "1234567890"
+    FacebookClientToken = "your-client-token"
+    FacebookDisplayName = "My App"
+    LSApplicationQueriesSchemes = ["fbapi", "fb-messenger-share-api"]
+
+    [[tool.kivy.ios.info_plist.CFBundleURLTypes]]
+    CFBundleTypeRole = "Editor"
+    # fb + FacebookAppID
+    CFBundleURLSchemes = ["fb1234567890"]
+
+    # Sign in with Apple, Game Center, a shared keychain
+    [tool.kivy.ios.entitlements]
+    "com.apple.developer.applesignin" = ["Default"]
+    "com.apple.developer.game-center" = true
+    "keychain-access-groups" = ["$(AppIdentifierPrefix)com.example.shared"]
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebaseAuth`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+    4. **Info > URL Types**: add the callback scheme (the `REVERSED_CLIENT_ID`, or `app-` + `GOOGLE_APP_ID` with `-` for `:`).
+    5. Google: add the `GoogleSignIn-iOS` package (`https://github.com/google/GoogleSignIn-iOS`), and its `REVERSED_CLIENT_ID` as a URL scheme.
+    6. Facebook: add the `facebook-ios-sdk` package (product `FacebookLogin`); in **Info**, `FacebookAppID`, `FacebookClientToken`, `FacebookDisplayName`, `LSApplicationQueriesSchemes`, and the URL scheme `fb<APP_ID>`.
+    7. **Signing & Capabilities**: *Sign in with Apple*, *Game Center*, *Keychain Sharing*, for the methods you use.
+
+!!! note
+    Keep only the parts for the sign-in methods you use: email, anonymous and custom tokens need nothing beyond `FirebaseAuth`.
+
+!!! note
+    Google Sign-In's `REVERSED_CLIENT_ID` is in `GoogleService-Info.plist` once the Google provider is enabled (download the file again after enabling it).
+
+
 ## Guides
 
 <div class="grid cards" markdown>

@@ -34,6 +34,34 @@ observer = messages.order_by_child("sent_at").limit_to_last(50).observe(
    `https://<name>.<region>.firebasedatabase.app`).
 3. Download `GoogleService-Info.plist` again: it then has the `DATABASE_URL`.
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebaseDatabase"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebaseDatabase`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+
+
 ## Guides
 
 <div class="grid cards" markdown>

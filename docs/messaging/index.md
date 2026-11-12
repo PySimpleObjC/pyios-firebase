@@ -49,6 +49,50 @@ sequenceDiagram
     FCM cannot deliver to the iOS Simulator. `xcrun simctl push` delivers a
     test payload instead ([Notifications](notifications.md#test-on-the-simulator)).
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebaseMessaging"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+    # Push Notifications ("production" for TestFlight and the App Store)
+    [tool.kivy.ios.entitlements]
+    "aps-environment" = "development"
+
+    [tool.kivy.ios.info_plist]
+    # background data with notifications
+    UIBackgroundModes = ["remote-notification"]
+    # optional: no token until you ask; register with the installation ID
+    # FirebaseMessagingAutoInitEnabled = false
+    # FirebaseMessagingInstallationIdEnabled = true
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebaseMessaging`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+    4. **Signing & Capabilities**: *Push Notifications*, and *Background Modes > Remote notifications*.
+    5. Optional, in **Info**: `FirebaseMessagingAutoInitEnabled` = `NO`, `FirebaseMessagingInstallationIdEnabled` = `YES`.
+
+!!! note
+    Upload an APNs authentication key in the console (**Project settings > Cloud Messaging**).
+
+
 ## The registration token
 
 The **FCM registration token** identifies this app install. Send it to your

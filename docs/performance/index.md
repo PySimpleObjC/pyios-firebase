@@ -18,6 +18,40 @@ Add the **`FirebasePerformance`** Swift package product
 ([Installation](../getting-started/installation.md)). Data shows in the
 console under **Performance** within a few hours (a day for the first data).
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebasePerformance"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+    # optional: collection and automatic traces off at build time
+    [tool.kivy.ios.info_plist]
+    firebase_performance_collection_enabled = false
+    firebase_performance_instrumentation_enabled = false
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebasePerformance`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+    4. Optional, in **Info**: `firebase_performance_collection_enabled` / `firebase_performance_instrumentation_enabled` = `NO`.
+
+
 ## What is measured by itself
 
 | Trace | Measures |

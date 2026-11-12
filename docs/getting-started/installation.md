@@ -124,6 +124,10 @@ finds those classes at runtime, so it needs all of them.
     Importing a module never fails for this: classes are looked up the first
     time they are used.
 
+Every product page has an **App configuration** section with exactly what
+it needs, and [App configuration](configuration.md) puts every product
+together.
+
 ## Package layout
 
 ```

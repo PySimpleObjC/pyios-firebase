@@ -24,6 +24,43 @@ The SDK logs some events by itself: `first_open`, `session_start`,
 `app_update`, `os_update`, `screen_view` for native screens, and in-app
 purchases.
 
+### App configuration
+
+What the app's build needs for this product. To combine several products, list
+them all in one `products`; see [App configuration](../getting-started/configuration.md).
+
+=== "kivyforge (pyproject.toml)"
+
+    ```toml title="pyproject.toml"
+    [[tool.kivy.ios.include_files]]
+    dest = "."
+    sources = ["GoogleService-Info.plist"]
+
+    [tool.kivy.ios.native.swift_packages.Firebase]
+    url = "https://github.com/firebase/firebase-ios-sdk.git"
+    requirement = { from = "13.1.1" }
+    products = ["FirebaseAnalytics"]
+
+    [tool.kivy.ios.xcode.build_settings]
+    OTHER_LDFLAGS = "$(inherited) -ObjC"
+
+    # optional: start with collection off, until the user agrees
+    [tool.kivy.ios.info_plist]
+    FIREBASE_ANALYTICS_COLLECTION_ENABLED = false
+    ```
+
+=== "Xcode (kivy-ios, Briefcase)"
+
+    1. **File > Add Package Dependencies...**, `https://github.com/firebase/firebase-ios-sdk.git`, and pick **`FirebaseAnalytics`**.
+    2. **Build Settings > Other Linker Flags**: add `-ObjC`.
+    3. Add `GoogleService-Info.plist` to the app target.
+    4. Optional, in **Info**: `FIREBASE_ANALYTICS_COLLECTION_ENABLED` = `NO`.
+    5. To see events in DebugView: **Product > Scheme > Edit Scheme > Run > Arguments**, add `-FIRDebugEnabled`.
+
+!!! note
+    `-FIRDebugEnabled` is a launch argument: with `xcrun simctl launch`, pass it after the bundle ID.
+
+
 ## Log events
 
 ```python
