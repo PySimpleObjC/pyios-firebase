@@ -198,6 +198,9 @@ nav:
           - Overview: messaging/index.md
           - Notifications: messaging/notifications.md
           - Reference: messaging/reference.md
+      - In-App Messaging:
+          - Usage: in-app-messaging/index.md
+          - Reference: in-app-messaging/reference.md
       - Performance Monitoring:
           - Usage: performance/index.md
           - Reference: performance/reference.md

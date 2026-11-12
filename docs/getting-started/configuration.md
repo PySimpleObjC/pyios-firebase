@@ -23,6 +23,7 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
 | [Crashlytics](../crashlytics/index.md#app-configuration) | `FirebaseCrashlytics` | The dSYM upload (Release builds make them; kivyforge: `upload-symbols` from the archive) |
 | [Cloud Messaging](../messaging/index.md#app-configuration) | `FirebaseMessaging` | The `aps-environment` entitlement, `UIBackgroundModes`; in Kivy, the launch hook package (optional) |
 | [Performance Monitoring](../performance/index.md#app-configuration) | `FirebasePerformance` | |
+| [In-App Messaging](../in-app-messaging/index.md#app-configuration) | `FirebaseInAppMessaging-Beta` | `FirebaseAnalytics` (for event triggers and statistics) |
 
 ## Everything together
 
@@ -46,6 +47,7 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
         "FirebaseDatabase",
         "FirebaseFirestore",
         "FirebaseFunctions",
+        "FirebaseInAppMessaging-Beta",
         "FirebaseMessaging",
         "FirebasePerformance",
         "FirebaseRemoteConfig",
@@ -85,6 +87,7 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
     # FIREBASE_ANALYTICS_COLLECTION_ENABLED = false
     # FirebaseCrashlyticsCollectionEnabled = false
     # firebase_performance_collection_enabled = false
+    # FirebaseInAppMessagingAutomaticDataCollectionEnabled = false
 
     # URL schemes: Auth's callback (phone and web sign-in), Google Sign-In, Facebook
     [[tool.kivy.ios.info_plist.CFBundleURLTypes]]

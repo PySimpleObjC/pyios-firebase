@@ -18,6 +18,8 @@ SKIP_CLASSES = {
     "PyAppleSignInDelegate",
     "PyAppCheckProviderBridge",
     "PyAppCheckProviderFactory",
+    "PyInAppMessagingDelegate",
+    "PyInAppMessagingDisplay",
     "PyMessagingDelegate",
     "PyNotificationCenterDelegate",
 }

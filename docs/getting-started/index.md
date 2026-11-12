@@ -75,6 +75,7 @@ through Rubicon-ObjC. In between, the library:
 | [Crashlytics](../crashlytics/index.md) | `crashlytics` | `FirebaseCrashlytics` | Crashes and Python exceptions as issues |
 | [Cloud Messaging](../messaging/index.md) | `messaging` | `FirebaseMessaging` | FCM tokens, topics, notifications |
 | [Performance Monitoring](../performance/index.md) | `performance` | `FirebasePerformance` | Traces and HTTP metrics |
+| [In-App Messaging](../in-app-messaging/index.md) | `in_app_messaging` | `FirebaseInAppMessaging-Beta` | Messages in the app: listeners, events, your own display |
 
 Every product is its own subpackage, and importing one never loads another:
 you only need the Firebase packages of the products you import.

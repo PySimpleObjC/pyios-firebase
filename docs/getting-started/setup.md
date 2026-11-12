@@ -84,6 +84,7 @@ Firebase reads these keys from the app's `Info.plist`. All are optional.
 | `FirebaseMessagingInstallationIdEnabled` | Messaging | `YES` registers through the installation ID instead of a token |
 | `firebase_performance_collection_enabled` | Performance | `NO` starts with collection off |
 | `firebase_performance_instrumentation_enabled` | Performance | `NO` turns off automatic traces |
+| `FirebaseInAppMessagingAutomaticDataCollectionEnabled` | In-App Messaging | `NO` fetches no messages until you turn it on |
 | `FirebaseAppCheckTokenAutoRefreshEnabled` | App Check | `NO` stops refreshing tokens in the background |
 | `CFBundleURLTypes` | Auth | URL schemes for Google Sign-In and for phone / web sign-in ([Authentication](../auth/index.md)) |
 

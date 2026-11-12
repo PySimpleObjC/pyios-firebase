@@ -93,6 +93,7 @@ exception instead:
 | Crashlytics | `RuntimeError` | A second unsent-report check in one launch (the SDK would answer "no report") |
 | App Check | `RuntimeError` | Choosing a provider after `core.configure()` |
 | Messaging | `ValueError` | An invalid topic name |
+| In-App Messaging | `ValueError`, `RuntimeError` | An empty event name; `in_app_messaging()` before `core.configure()`; a custom display that finishes a message twice |
 
 Some of these the SDK would not abort on, but silently drop (an Analytics
 event, a Performance attribute): an exception tells you while you develop,

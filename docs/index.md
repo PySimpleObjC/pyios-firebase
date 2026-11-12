@@ -124,6 +124,14 @@ Firestore.firestore().document_with_path("cities/SF").get_document(on_city)
 
     [:octicons-arrow-right-24: Usage](messaging/index.md) · [Reference](messaging/reference.md)
 
+-   :material-message-badge-outline:{ .lg .middle } **In-App Messaging**
+
+    ---
+
+    Firebase's messages inside the app, their clicks and dismissals in Python, or drawn with your own UI.
+
+    [:octicons-arrow-right-24: Usage](in-app-messaging/index.md) · [Reference](in-app-messaging/reference.md)
+
 -   :material-speedometer:{ .lg .middle } **Performance Monitoring**
 
     ---
