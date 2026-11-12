@@ -50,8 +50,6 @@ them all in one `products`; see [App configuration](../getting-started/configura
 
     [tool.kivy.ios.xcode.build_settings]
     OTHER_LDFLAGS = "$(inherited) -ObjC"
-    # readable stack traces
-    DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"
 
     # optional: keep reports on the device until the user agrees
     [tool.kivy.ios.info_plist]
@@ -68,7 +66,7 @@ them all in one `products`; see [App configuration](../getting-started/configura
     6. Optional, in **Info**: `FirebaseCrashlyticsCollectionEnabled` = `NO`.
 
 !!! note
-    kivyforge has no setting for a custom build phase. Upload the dSYMs after an archive instead: `<DerivedData>/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols -gsp GoogleService-Info.plist -p ios <path to the .dSYM files>`.
+    kivyforge already makes Release builds with dSYMs (`DEBUG_INFORMATION_FORMAT` is `dwarf-with-dsym` for Release, `dwarf` for Debug, and kivyforge manages it: do not set it in `build_settings`). It has no setting for a custom build phase, so upload the dSYMs of a **Release archive** yourself: `<DerivedData>/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/upload-symbols -gsp GoogleService-Info.plist -p ios <the archive's dSYMs folder>`.
 
 
 ## Python exceptions

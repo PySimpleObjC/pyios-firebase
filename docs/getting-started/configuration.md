@@ -20,7 +20,7 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
 | [Remote Config](../remote-config/index.md#app-configuration) | `FirebaseRemoteConfig` | `RemoteConfigDefaults.plist` in the bundle (optional) |
 | [App Check](../app-check/index.md#app-configuration) | `FirebaseAppCheck` | The App Attest entitlement |
 | [Analytics](../analytics/index.md#app-configuration) | `FirebaseAnalytics` | |
-| [Crashlytics](../crashlytics/index.md#app-configuration) | `FirebaseCrashlytics` | dSYMs: `DEBUG_INFORMATION_FORMAT`, and the upload |
+| [Crashlytics](../crashlytics/index.md#app-configuration) | `FirebaseCrashlytics` | The dSYM upload (Release builds make them; kivyforge: `upload-symbols` from the archive) |
 | [Cloud Messaging](../messaging/index.md#app-configuration) | `FirebaseMessaging` | The `aps-environment` entitlement, `UIBackgroundModes` |
 | [Performance Monitoring](../performance/index.md#app-configuration) | `FirebasePerformance` | |
 
@@ -67,8 +67,6 @@ Every app needs the base: `GoogleService-Info.plist` in the bundle, the
     [tool.kivy.ios.xcode.build_settings]
     # Python finds the SDK's classes at runtime
     OTHER_LDFLAGS = "$(inherited) -ObjC"
-    # Crashlytics: readable stack traces
-    DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"
 
     # --- Info.plist -------------------------------------------------------------
     [tool.kivy.ios.info_plist]
