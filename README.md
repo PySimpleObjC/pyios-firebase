@@ -1841,9 +1841,13 @@ Releases go to PyPI from GitHub Actions (`.github/workflows/release.yml`), with
    git push origin v0.2.0
    ```
 
+   Or on GitHub: **Releases > Draft a new release**, type `v0.2.0` in **Choose
+   a tag** (*Create new tag on publish*), target `main`, and **Publish
+   release**. Publishing creates the tag.
+
 The tag runs the checks, builds the sdist and the wheel, checks that the tag
-matches `__version__`, publishes to PyPI, and creates the GitHub Release with
-the files. **Run workflow** on the Release workflow publishes to TestPyPI
+matches `__version__`, publishes to PyPI, and attaches the files to the
+GitHub Release (it creates the release for a pushed tag). **Run workflow** on the Release workflow publishes to TestPyPI
 instead, as a dry run.
 
 ### End-to-end tests on the iOS Simulator
