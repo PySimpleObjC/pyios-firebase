@@ -8,6 +8,24 @@ uv run pyright     # the checker behind VS Code's Pylance
 uv run ruff check
 ```
 
+## Releasing
+
+Releases go to PyPI from GitHub Actions (`.github/workflows/release.yml`), with
+[Trusted Publishing](https://docs.pypi.org/trusted-publishers/): no API token.
+
+1. Set `__version__` in `src/pyios_firebase/__init__.py`, and merge to `main`.
+2. Tag the merge and push the tag:
+
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+The tag runs the checks, builds the sdist and the wheel, checks that the tag
+matches `__version__`, publishes to PyPI, and creates the GitHub Release with
+the files. **Run workflow** on the Release workflow publishes to TestPyPI
+instead, as a dry run.
+
 ## End-to-end tests on the iOS Simulator
 
 ```bash

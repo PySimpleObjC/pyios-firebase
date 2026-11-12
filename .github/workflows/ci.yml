@@ -1,0 +1,47 @@
+# Lint, type checks and unit tests. On every push and pull request, and
+# before each release (release.yml calls it).
+#
+# On macOS: the tests use the Objective-C runtime through Rubicon (fakes stand
+# in for the Firebase classes). The end-to-end tests need the iOS Simulator
+# and the Firebase emulators: run them locally with e2e/run_ios_e2e.sh.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Checks (Python ${{ matrix.python }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: uv sync --group dev
+      - name: Lint
+        run: |
+          uv run ruff check src tests
+          uv run ruff format --check src tests
+      - name: mypy (strict)
+        run: uv run mypy
+      - name: pyright
+        run: uv run pyright
+      - name: Unit tests
+        run: uv run pytest -q

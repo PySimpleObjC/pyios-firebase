@@ -49,7 +49,7 @@ def round_trip(value):
             0,
         ),
         # naive: read as UTC
-        (datetime(2023, 11, 14, 22, 13, 20), 1_700_000_000, 0),  # noqa: DTZ001
+        (datetime(2023, 11, 14, 22, 13, 20), 1_700_000_000, 0),
     ],
 )
 def test_datetime_to_timestamp(value, seconds, nanoseconds):
