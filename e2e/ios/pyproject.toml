@@ -9,7 +9,7 @@ dependencies = [
     "kivy",
     "rubicon-objc>=0.5.7",
     # the wheel built from this checkout by run_ios_e2e.sh (wheels/)
-    "pyios-firebase==0.2.0",
+    "pyios-firebase==0.2.1",
 ]
 
 [tool.kivy]
